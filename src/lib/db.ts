@@ -254,62 +254,104 @@ export async function importBackup(backup: BackupFile): Promise<ImportResult> {
   }
   await trackTx.done
 
-  let added = 0
+  // Bookmarks keep their original id from the backup instead of getting a
+  // fresh one, so re-importing the same backup updates them in place rather
+  // than piling up copies. For each matched track, anything currently stored
+  // locally that isn't in this backup (deleted or renamed on the source
+  // device) is removed too, so the track ends up an exact mirror of the
+  // backup's set rather than a superset.
+  const incomingBookmarksByTrack = new Map<string, Bookmark[]>()
   let skipped = 0
-  const bookmarkTx = database.transaction('bookmarks', 'readwrite')
   for (const bookmark of backup.bookmarks ?? []) {
     const trackId = remap.get(bookmark.trackId)
     if (!trackId) {
       skipped += 1
       continue
     }
-    await bookmarkTx.store.put({ ...bookmark, id: newId(), trackId })
-    added += 1
+    if (!incomingBookmarksByTrack.has(trackId)) incomingBookmarksByTrack.set(trackId, [])
+    incomingBookmarksByTrack.get(trackId)!.push(bookmark)
+  }
+
+  let added = 0
+  const bookmarkTx = database.transaction('bookmarks', 'readwrite')
+  for (const trackId of new Set(remap.values())) {
+    const incoming = incomingBookmarksByTrack.get(trackId) ?? []
+    const keepIds = new Set(incoming.map((b) => b.id))
+    const existing = await bookmarkTx.store.index('byTrack').getAll(trackId)
+    for (const stale of existing) {
+      if (!keepIds.has(stale.id)) await bookmarkTx.store.delete(stale.id)
+    }
+    for (const bookmark of incoming) {
+      await bookmarkTx.store.put({ ...bookmark, trackId })
+      added += 1
+    }
   }
   await bookmarkTx.done
 
-  // Scenes come in as additions rather than replacements, appended after the
-  // ones already here, so an import can never overwrite work in progress.
-  const existingScenes = await database.getAll('scenes')
-  let nextOrder = existingScenes.length
-  const sceneIds = new Map<string, string>()
-  const sceneTx = database.transaction('scenes', 'readwrite')
-  for (const scene of backup.scenes ?? []) {
-    const id = newId()
-    sceneIds.set(scene.id, id)
-    await sceneTx.store.put({ ...scene, id, order: nextOrder })
-    nextOrder += 1
-  }
-  await sceneTx.done
-
+  // Scenes and lines keep their original ids and are fully mirrored from the
+  // backup: anything on this device that isn't in the backup gets removed, so
+  // re-importing always lands on exactly the source device's scene/line set
+  // instead of accumulating duplicates. Older backups that predate scenes
+  // omit the field entirely, in which case this is skipped and local scenes
+  // are left untouched.
+  let scenesAdded = 0
   let linesAdded = 0
-  const lineTx = database.transaction('lines', 'readwrite')
-  for (const line of backup.lines ?? []) {
-    const sceneId = sceneIds.get(line.sceneId)
-    if (!sceneId) continue
-    await lineTx.store.put({ ...line, id: newId(), sceneId })
-    linesAdded += 1
-  }
-  await lineTx.done
+  if (backup.scenes) {
+    const keepSceneIds = new Set(backup.scenes.map((s) => s.id))
+    const existingScenes = await database.getAll('scenes')
+    const sceneTx = database.transaction(['scenes', 'lines'], 'readwrite')
+    for (const scene of existingScenes) {
+      if (keepSceneIds.has(scene.id)) continue
+      await sceneTx.objectStore('scenes').delete(scene.id)
+      const staleLineKeys = await sceneTx.objectStore('lines').index('byScene').getAllKeys(scene.id)
+      for (const key of staleLineKeys) await sceneTx.objectStore('lines').delete(key)
+    }
+    for (const scene of backup.scenes) {
+      await sceneTx.objectStore('scenes').put(scene)
+      scenesAdded += 1
+    }
 
-  // A note is keyed by trackId, so importing over an existing one would
-  // clobber whatever is already there — only fill in tracks that have none.
-  let notesAdded = 0
-  const existingNotes = await database.getAll('notes')
-  const hasNote = new Set(existingNotes.map((n) => n.trackId))
-  const noteTx = database.transaction('notes', 'readwrite')
-  for (const note of backup.notes ?? []) {
-    const trackId = remap.get(note.trackId)
-    if (!trackId || hasNote.has(trackId)) continue
-    await noteTx.store.put({ ...note, trackId })
-    notesAdded += 1
+    if (backup.lines) {
+      const keepLineIds = new Set(backup.lines.map((l) => l.id))
+      for (const sceneId of keepSceneIds) {
+        const currentLineKeys = await sceneTx.objectStore('lines').index('byScene').getAllKeys(sceneId)
+        for (const key of currentLineKeys) {
+          if (!keepLineIds.has(key as string)) await sceneTx.objectStore('lines').delete(key)
+        }
+      }
+      for (const line of backup.lines) {
+        if (!keepSceneIds.has(line.sceneId)) continue
+        await sceneTx.objectStore('lines').put(line)
+        linesAdded += 1
+      }
+    }
+    await sceneTx.done
   }
-  await noteTx.done
+
+  // A note is keyed by trackId. Only backups that carry the notes field at
+  // all get synced (older exports predate notes and must not wipe existing
+  // ones); for those that do, a matched track's note is overwritten to match
+  // the backup, or removed if the backup no longer has one for that track.
+  let notesAdded = 0
+  if (backup.notes) {
+    const noteByOriginalTrackId = new Map(backup.notes.map((n) => [n.trackId, n]))
+    const noteTx = database.transaction('notes', 'readwrite')
+    for (const [originalTrackId, localTrackId] of remap) {
+      const note = noteByOriginalTrackId.get(originalTrackId)
+      if (note) {
+        await noteTx.store.put({ ...note, trackId: localTrackId })
+        notesAdded += 1
+      } else {
+        await noteTx.store.delete(localTrackId)
+      }
+    }
+    await noteTx.done
+  }
 
   return {
     bookmarksAdded: added,
     bookmarksSkipped: skipped,
-    scenesAdded: sceneIds.size,
+    scenesAdded,
     linesAdded,
     notesAdded,
     namesUpdated,
