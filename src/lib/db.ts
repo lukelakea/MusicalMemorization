@@ -211,8 +211,8 @@ export interface ImportResult {
 
 /**
  * Merges a backup into the current database. Bookmarks whose track is not
- * present locally are skipped — re-import that audio file first, keeping the
- * same track name, then import again.
+ * present locally are skipped — re-import that audio file first, then import
+ * again.
  */
 export async function importBackup(backup: BackupFile): Promise<ImportResult> {
   if (backup?.format !== 'musical-memorization') {
@@ -221,13 +221,20 @@ export async function importBackup(backup: BackupFile): Promise<ImportResult> {
   const database = await db()
   const localTracks = await database.getAll('tracks')
 
-  // Match by id first, then fall back to name so a re-imported file adopts its
-  // old bookmarks even though the new import generated a fresh id.
+  // Match by id first, then by the original file name — not the editable
+  // display name, which may have been customized differently on each device
+  // — so a re-imported file adopts its old bookmarks even though the new
+  // import generated a fresh id. Display name is kept as a last-resort
+  // fallback for backups that predate this.
   const byId = new Map(localTracks.map((t) => [t.id, t.id]))
+  const byFileName = new Map(localTracks.map((t) => [t.fileName.toLowerCase(), t.id]))
   const byName = new Map(localTracks.map((t) => [t.name.toLowerCase(), t.id]))
   const remap = new Map<string, string>()
   for (const track of backup.tracks ?? []) {
-    const local = byId.get(track.id) ?? byName.get(track.name.toLowerCase())
+    const local =
+      byId.get(track.id) ??
+      byFileName.get(track.fileName.toLowerCase()) ??
+      byName.get(track.name.toLowerCase())
     if (local) remap.set(track.id, local)
   }
 
