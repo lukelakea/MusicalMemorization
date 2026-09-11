@@ -207,6 +207,7 @@ export interface ImportResult {
   scenesAdded: number
   linesAdded: number
   notesAdded: number
+  namesUpdated: number
 }
 
 /**
@@ -237,6 +238,21 @@ export async function importBackup(backup: BackupFile): Promise<ImportResult> {
       byName.get(track.name.toLowerCase())
     if (local) remap.set(track.id, local)
   }
+
+  // Carries the backup's display name onto the matched local track, so
+  // renames/reordering done on one device (e.g. alphabetizing) show up on
+  // the other without having to rename each track by hand.
+  const localById = new Map(localTracks.map((t) => [t.id, t]))
+  let namesUpdated = 0
+  const trackTx = database.transaction('tracks', 'readwrite')
+  for (const track of backup.tracks ?? []) {
+    const localId = remap.get(track.id)
+    const local = localId ? localById.get(localId) : undefined
+    if (!local || local.name === track.name) continue
+    await trackTx.store.put({ ...local, name: track.name })
+    namesUpdated += 1
+  }
+  await trackTx.done
 
   let added = 0
   let skipped = 0
@@ -296,5 +312,6 @@ export async function importBackup(backup: BackupFile): Promise<ImportResult> {
     scenesAdded: sceneIds.size,
     linesAdded,
     notesAdded,
+    namesUpdated,
   }
 }

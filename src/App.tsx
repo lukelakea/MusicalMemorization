@@ -36,7 +36,7 @@ export function App() {
       setStatus(
         `Imported ${result.bookmarksAdded} bookmark(s), ` +
           `${result.scenesAdded} scene(s), ${result.linesAdded} line(s), ` +
-          `${result.notesAdded} note(s).` +
+          `${result.notesAdded} note(s), renamed ${result.namesUpdated} track(s).` +
           (result.bookmarksSkipped
             ? ` Skipped ${result.bookmarksSkipped} bookmark(s) whose track is not imported here yet.`
             : ''),
