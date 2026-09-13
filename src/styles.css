@@ -236,7 +236,7 @@ button.tiny { padding: 1px 6px; font-size: 11px; line-height: 1.3; }
   flex-direction: column;
   gap: 8px;
 }
-.line-mine { border-left-color: var(--accent); }
+.line-mine { border-left-color: var(--accent); background: var(--accent-soft); }
 .line-silent { border-left-color: #6b7280; }
 .line.is-current { background: var(--accent-soft); border-color: var(--accent); }
 .line.is-disabled { opacity: 0.45; }
