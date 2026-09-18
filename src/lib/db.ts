@@ -245,11 +245,29 @@ export interface ImportResult {
 }
 
 /**
+ * Voice ids are specific to the device that picked them. Importing must never
+ * replace a voice chosen on this device, and only adopts one from the backup
+ * if this device actually has that voice; otherwise the line or character
+ * falls back to the default voice instead of holding an id that can't play.
+ */
+function mergeVoiceId(
+  local: string | null | undefined,
+  incoming: string | null | undefined,
+  known: ReadonlySet<string>,
+): string | null {
+  if (local) return local
+  return incoming && known.has(incoming) ? incoming : null
+}
+
+/**
  * Merges a backup into the current database. Bookmarks whose track is not
  * present locally are skipped — re-import that audio file first, then import
  * again.
  */
-export async function importBackup(backup: BackupFile): Promise<ImportResult> {
+export async function importBackup(
+  backup: BackupFile,
+  knownVoiceIds: ReadonlySet<string> = new Set(),
+): Promise<ImportResult> {
   if (backup?.format !== 'musical-memorization') {
     throw new Error('Not a Musical Memorization backup file.')
   }
@@ -355,7 +373,11 @@ export async function importBackup(backup: BackupFile): Promise<ImportResult> {
       }
       for (const line of backup.lines) {
         if (!keepSceneIds.has(line.sceneId)) continue
-        await sceneTx.objectStore('lines').put(line)
+        const localLine = await sceneTx.objectStore('lines').get(line.id)
+        await sceneTx.objectStore('lines').put({
+          ...line,
+          voiceId: mergeVoiceId(localLine?.voiceId, line.voiceId, knownVoiceIds),
+        })
         linesAdded += 1
       }
     }
@@ -392,7 +414,11 @@ export async function importBackup(backup: BackupFile): Promise<ImportResult> {
       if (!keepIds.has(existing as string)) await characterTx.store.delete(existing)
     }
     for (const character of backup.characters) {
-      await characterTx.store.put(character)
+      const localCharacter = await characterTx.store.get(character.id)
+      await characterTx.store.put({
+        ...character,
+        voiceId: mergeVoiceId(localCharacter?.voiceId, character.voiceId, knownVoiceIds),
+      })
       charactersAdded += 1
     }
     await characterTx.done

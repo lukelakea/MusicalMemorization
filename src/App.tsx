@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { exportBackup, importBackup, requestPersistence } from './lib/db'
+import { loadVoices } from './lib/speech'
 import { CharactersPage } from './characters/CharactersPage'
 import { ScenesPage } from './scenes/ScenesPage'
 import { TracksPage } from './tracks/TracksPage'
@@ -33,7 +34,11 @@ export function App() {
   async function doImport(file: File | undefined) {
     if (!file) return
     try {
-      const result = await importBackup(JSON.parse(await file.text()))
+      // Voice ids belong to the device that picked them, so the import needs to
+      // know which voices exist here to decide whether a backup's voice is usable.
+      const voices = await loadVoices()
+      const knownVoiceIds = new Set(voices.flatMap((v) => [v.id, ...v.alternateIds]))
+      const result = await importBackup(JSON.parse(await file.text()), knownVoiceIds)
       setStatus(
         `Imported ${result.bookmarksAdded} bookmark(s), ` +
           `${result.scenesAdded} scene(s), ${result.linesAdded} line(s), ` +
