@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Line } from '../lib/types'
+import type { Character, Line } from '../lib/types'
+import { resolveSpeech } from '../lib/characters'
 import { estimateSeconds, speak } from '../lib/speech'
 
 export type PlayerState = 'idle' | 'playing' | 'paused'
@@ -8,6 +9,16 @@ export type PlayerState = 'idle' | 'playing' | 'paused'
 interface Runner {
   cancelled: boolean
   abort: () => void
+}
+
+interface PlayerOptions {
+  characters: Character[]
+  /** Scene-wide multiplier over each line's own rate and every pause. */
+  speed: number
+  /** Read "My line" entries aloud instead of waiting in silence. */
+  speakMyLines: boolean
+  /** Called when a pass reaches the end of the scene on its own, not on stop or pause. */
+  onFinished?: () => void
 }
 
 function sleep(seconds: number, runner: Runner): Promise<void> {
@@ -21,18 +32,17 @@ function sleep(seconds: number, runner: Runner): Promise<void> {
   })
 }
 
-export function useScenePlayer(lines: Line[], speed = 1) {
+export function useScenePlayer(lines: Line[], options: PlayerOptions) {
   const [state, setState] = useState<PlayerState>('idle')
   const [currentLineId, setCurrentLineId] = useState<string | null>(null)
 
-  // The running pass reads lines through a ref so edits made mid-scene take
-  // effect on the next line rather than being frozen at play time.
+  // The running pass reads everything through refs so edits and setting
+  // changes made mid-scene take effect on the next line rather than being
+  // frozen at play time.
   const linesRef = useRef(lines)
   linesRef.current = lines
-  // A scene-wide multiplier over each line's own rate, read live so a change
-  // takes effect from the next line rather than needing a restart.
-  const speedRef = useRef(speed)
-  speedRef.current = speed
+  const optionsRef = useRef(options)
+  optionsRef.current = options
   const runnerRef = useRef<Runner | null>(null)
 
   const halt = useCallback(() => {
@@ -46,11 +56,25 @@ export function useScenePlayer(lines: Line[], speed = 1) {
   const enabled = useCallback(() => linesRef.current.filter((line) => line.enabled), [])
 
   const run = useCallback(
-    async (fromIndex: number) => {
+    async (fromIndex: number, announcement?: string) => {
       halt()
       const runner: Runner = { cancelled: false, abort: () => {} }
       runnerRef.current = runner
       setState('playing')
+
+      if (announcement) {
+        setCurrentLineId(null)
+        const handle = speak(announcement, {
+          voiceId: null,
+          rate: optionsRef.current.speed,
+          pitch: 1,
+        })
+        runner.abort = handle.cancel
+        await handle.done
+        if (runner.cancelled) return
+        await sleep(0.8 / optionsRef.current.speed, runner)
+        if (runner.cancelled) return
+      }
 
       for (let i = fromIndex; ; i += 1) {
         const sequence = enabled()
@@ -59,29 +83,32 @@ export function useScenePlayer(lines: Line[], speed = 1) {
         if (runner.cancelled) return
         setCurrentLineId(line.id)
 
-        if (line.mode === 'tts') {
+        const { characters, speed, speakMyLines } = optionsRef.current
+        if (line.mode === 'tts' || (line.mode === 'mine' && speakMyLines)) {
+          const voice = resolveSpeech(line, characters)
           const handle = speak(line.text, {
-            voiceId: line.voiceId,
+            voiceId: voice.voiceId,
             // The Web Speech API rejects rates outside 0.1-10.
-            rate: Math.min(10, Math.max(0.1, line.rate * speedRef.current)),
-            pitch: line.pitch,
+            rate: Math.min(10, Math.max(0.1, voice.rate * speed)),
+            pitch: voice.pitch,
           })
           runner.abort = handle.cancel
           await handle.done
         } else if (line.mode === 'mine') {
           // Your own line: silence long enough to say it, scaled the same way
           // so the whole scene slows down together.
-          await sleep((line.holdSec ?? estimateSeconds(line.text)) / speedRef.current, runner)
+          await sleep((line.holdSec ?? estimateSeconds(line.text)) / speed, runner)
         }
 
         if (runner.cancelled) return
-        await sleep(line.delayAfterSec / speedRef.current, runner)
+        await sleep(line.delayAfterSec / optionsRef.current.speed, runner)
       }
 
       if (!runner.cancelled) {
         runnerRef.current = null
         setState('idle')
         setCurrentLineId(null)
+        optionsRef.current.onFinished?.()
       }
     },
     [enabled, halt],
@@ -98,6 +125,14 @@ export function useScenePlayer(lines: Line[], speed = 1) {
     const from = Math.max(0, indexOfCurrent())
     void run(from)
   }, [indexOfCurrent, run])
+
+  /** Starts the scene from the top after speaking `announcement` (the scene's name). */
+  const playWithAnnouncement = useCallback(
+    (announcement: string) => {
+      void run(0, announcement)
+    },
+    [run],
+  )
 
   const pause = useCallback(() => {
     halt()
@@ -137,6 +172,7 @@ export function useScenePlayer(lines: Line[], speed = 1) {
     state,
     currentLineId,
     play,
+    playWithAnnouncement,
     pause,
     stop,
     playFrom,

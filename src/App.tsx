@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { exportBackup, importBackup, requestPersistence } from './lib/db'
+import { CharactersPage } from './characters/CharactersPage'
 import { ScenesPage } from './scenes/ScenesPage'
 import { TracksPage } from './tracks/TracksPage'
 
-type Tab = 'tracks' | 'scenes'
+type Tab = 'tracks' | 'scenes' | 'characters'
 
 export function App() {
   const [tab, setTab] = useState<Tab>('tracks')
@@ -36,7 +37,7 @@ export function App() {
       setStatus(
         `Imported ${result.bookmarksAdded} bookmark(s), ` +
           `${result.scenesAdded} scene(s), ${result.linesAdded} line(s), ` +
-          `${result.notesAdded} note(s), renamed ${result.namesUpdated} track(s).` +
+          `${result.notesAdded} note(s), ${result.charactersAdded} character(s), renamed ${result.namesUpdated} track(s).` +
           (result.bookmarksSkipped
             ? ` Skipped ${result.bookmarksSkipped} bookmark(s) whose track is not imported here yet.`
             : ''),
@@ -65,6 +66,12 @@ export function App() {
           >
             Scenes
           </button>
+          <button
+            className={tab === 'characters' ? 'is-active' : ''}
+            onClick={() => setTab('characters')}
+          >
+            Characters
+          </button>
         </nav>
         <div className="backup">
           <button className="ghost" onClick={() => void doExport()}>
@@ -90,7 +97,7 @@ export function App() {
       )}
 
       <main>
-        {tab === 'tracks' ? <TracksPage /> : <ScenesPage />}
+        {tab === 'tracks' ? <TracksPage /> : tab === 'scenes' ? <ScenesPage /> : <CharactersPage />}
       </main>
     </div>
   )

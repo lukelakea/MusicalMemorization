@@ -1,14 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Line, Scene } from '../lib/types'
+import type { Character, Line, Scene } from '../lib/types'
 import type { VoiceOption } from '../lib/speech'
 import { speechSupported } from '../lib/speech'
+import { findCharacter } from '../lib/characters'
 import { deleteLine, getLines, newId, putLine, putLines, reorder } from '../lib/db'
 import { LineRow } from './LineRow'
 import { useScenePlayer } from './useScenePlayer'
 
+/** Playback settings live above the editor so they carry over when a scene auto-advances. */
+export interface PlaybackSettings {
+  speed: number
+  speakMyLines: boolean
+  cueMode: boolean
+  autoAdvance: boolean
+}
+
 interface Props {
   scene: Scene
   voices: VoiceOption[]
+  characters: Character[]
+  settings: PlaybackSettings
+  onSettingsChange: (patch: Partial<PlaybackSettings>) => void
+  /** True when the previous scene just finished and handed over to this one. */
+  autoPlay: boolean
+  /** The scene played through to its end without being stopped. */
+  onFinished: () => void
   onRename: (title: string) => void
   onDelete: () => void
 }
@@ -37,22 +53,44 @@ function parsePastedScript(input: string, lastSpeaker: string): Array<{ speaker:
   return parsed
 }
 
-export function SceneEditor({ scene, voices, onRename, onDelete }: Props) {
+export function SceneEditor({
+  scene,
+  voices,
+  characters,
+  settings,
+  onSettingsChange,
+  autoPlay,
+  onFinished,
+  onRename,
+  onDelete,
+}: Props) {
+  const { speed, speakMyLines, cueMode, autoAdvance } = settings
   const [lines, setLines] = useState<Line[]>([])
-  const [cueMode, setCueMode] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   const [pasting, setPasting] = useState(false)
   const [pasteText, setPasteText] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const [speed, setSpeed] = useState(1)
-  const player = useScenePlayer(lines, speed)
+  const player = useScenePlayer(lines, { characters, speed, speakMyLines, onFinished })
   const currentRef = useRef<HTMLLIElement>(null)
+  const autoStarted = useRef(false)
 
   useEffect(() => {
-    setCueMode(false)
     setPasting(false)
     setConfirmingDelete(false)
-    getLines(scene.id).then(setLines)
+    setLoaded(false)
+    getLines(scene.id).then((loadedLines) => {
+      setLines(loadedLines)
+      setLoaded(true)
+    })
   }, [scene.id])
+
+  // Arriving here from the previous scene's end: name this scene, then play it.
+  const { playWithAnnouncement } = player
+  useEffect(() => {
+    if (!autoPlay || !loaded || autoStarted.current) return
+    autoStarted.current = true
+    playWithAnnouncement(scene.title)
+  }, [autoPlay, loaded, playWithAnnouncement, scene.title])
 
   const enabledCount = useMemo(() => lines.filter((line) => line.enabled).length, [lines])
 
@@ -69,8 +107,10 @@ export function SceneEditor({ scene, voices, onRename, onDelete }: Props) {
       speaker: previous?.speaker ?? '',
       text: '',
       mode: 'tts',
-      // Inherit the last voice used, so a character tends to keep one voice.
-      voiceId: previous?.voiceId ?? null,
+      // Inherit the last voice used, so a speaker tends to keep one voice —
+      // unless a character already owns that speaker, whose voice a pinned
+      // line voice would override.
+      voiceId: previous && !findCharacter(previous.speaker, characters) ? previous.voiceId : null,
       rate: 1,
       pitch: 1,
       holdSec: null,
@@ -114,7 +154,7 @@ export function SceneEditor({ scene, voices, onRename, onDelete }: Props) {
       speaker: entry.speaker,
       text: entry.text,
       mode: 'tts',
-      voiceId: voiceBySpeaker.get(entry.speaker) ?? null,
+      voiceId: findCharacter(entry.speaker, characters) ? null : voiceBySpeaker.get(entry.speaker) ?? null,
       rate: 1,
       pitch: 1,
       holdSec: null,
@@ -175,9 +215,18 @@ export function SceneEditor({ scene, voices, onRename, onDelete }: Props) {
         <button className="ghost" onClick={player.next}>
           Next
         </button>
+        <span className="clock">
+          {enabledCount} of {lines.length} lines active
+        </span>
+      </div>
+
+      <div className="transport-options">
         <label className="rate" title="Scales every voice and every pause in the scene">
           Speed
-          <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
+          <select
+            value={speed}
+            onChange={(e) => onSettingsChange({ speed: Number(e.target.value) })}
+          >
             {[0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5].map((value) => (
               <option key={value} value={value}>
                 {value}×
@@ -189,13 +238,32 @@ export function SceneEditor({ scene, voices, onRename, onDelete }: Props) {
           <input
             type="checkbox"
             checked={cueMode}
-            onChange={(e) => setCueMode(e.target.checked)}
+            onChange={(e) => onSettingsChange({ cueMode: e.target.checked })}
           />
           Cue mode
         </label>
-        <span className="clock">
-          {enabledCount} of {lines.length} lines active
-        </span>
+        <label
+          className="inline-check"
+          title="Read your own lines aloud instead of pausing in silence"
+        >
+          <input
+            type="checkbox"
+            checked={speakMyLines}
+            onChange={(e) => onSettingsChange({ speakMyLines: e.target.checked })}
+          />
+          Read my lines
+        </label>
+        <label
+          className="inline-check"
+          title="When this scene ends, say the next scene's name and keep going"
+        >
+          <input
+            type="checkbox"
+            checked={autoAdvance}
+            onChange={(e) => onSettingsChange({ autoAdvance: e.target.checked })}
+          />
+          Auto-play next scene
+        </label>
       </div>
 
       {!speechSupported && (
@@ -218,6 +286,7 @@ export function SceneEditor({ scene, voices, onRename, onDelete }: Props) {
               ref={line.id === player.currentLineId ? currentRef : undefined}
               line={line}
               voices={voices}
+              character={findCharacter(line.speaker, characters)}
               isCurrent={line.id === player.currentLineId}
               cueMode={cueMode}
               onChange={(patch) => void patchLine(line.id, patch)}

@@ -1,13 +1,15 @@
 import { useState } from 'react'
-import type { Line, LineMode } from '../lib/types'
+import type { Character, Line, LineMode } from '../lib/types'
 import type { VoiceOption } from '../lib/speech'
-import { estimateSeconds } from '../lib/speech'
+import { estimateSeconds, pickerValue } from '../lib/speech'
 
 interface Props {
   /** React 19 passes ref as a plain prop; the editor uses it to auto-scroll. */
   ref?: React.Ref<HTMLLIElement>
   line: Line
   voices: VoiceOption[]
+  /** The character this line's speaker maps to, if any. */
+  character: Character | null
   isCurrent: boolean
   cueMode: boolean
   onChange: (patch: Partial<Line>) => void
@@ -26,6 +28,7 @@ export function LineRow({
   ref,
   line,
   voices,
+  character,
   isCurrent,
   cueMode,
   onChange,
@@ -132,10 +135,14 @@ export function LineRow({
             <label>
               Voice
               <select
-                value={line.voiceId ?? ''}
+                value={pickerValue(voices, line.voiceId)}
                 onChange={(e) => onChange({ voiceId: e.target.value || null })}
               >
-                <option value="">System default</option>
+                <option value="">
+                  {character
+                    ? `${character.name}'s voice`
+                    : 'System default'}
+                </option>
                 {voices.map((voice) => (
                   <option key={voice.id} value={voice.id}>
                     {voice.label} — {voice.lang}

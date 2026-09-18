@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import type { BackupFile, Bookmark, Line, Note, Scene, Track, TrackMeta } from './types'
+import type { BackupFile, Bookmark, Character, Line, Note, Scene, Track, TrackMeta } from './types'
 
 interface MMSchema extends DBSchema {
   tracks: {
@@ -24,10 +24,14 @@ interface MMSchema extends DBSchema {
     key: string
     value: Note
   }
+  characters: {
+    key: string
+    value: Character
+  }
 }
 
 const DB_NAME = 'musical-memorization'
-const DB_VERSION = 3
+const DB_VERSION = 4
 
 let dbPromise: Promise<IDBPDatabase<MMSchema>> | null = null
 
@@ -47,6 +51,9 @@ function db() {
         }
         if (oldVersion < 3) {
           database.createObjectStore('notes', { keyPath: 'trackId' })
+        }
+        if (oldVersion < 4) {
+          database.createObjectStore('characters', { keyPath: 'id' })
         }
       },
     })
@@ -160,6 +167,30 @@ export async function deleteLine(id: string): Promise<void> {
   await (await db()).delete('lines', id)
 }
 
+export async function getAllLines(): Promise<Line[]> {
+  return (await db()).getAll('lines')
+}
+
+export async function getCharacters(): Promise<Character[]> {
+  const all = await (await db()).getAll('characters')
+  return all.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export async function putCharacter(character: Character): Promise<void> {
+  await (await db()).put('characters', character)
+}
+
+export async function putCharacters(characters: Character[]): Promise<void> {
+  const database = await db()
+  const tx = database.transaction('characters', 'readwrite')
+  await Promise.all(characters.map((character) => tx.store.put(character)))
+  await tx.done
+}
+
+export async function deleteCharacter(id: string): Promise<void> {
+  await (await db()).delete('characters', id)
+}
+
 /**
  * Moves one item of an ordered list and renumbers the whole list, so `order`
  * stays a dense 0..n-1 sequence no matter how much reordering has happened.
@@ -189,15 +220,17 @@ export async function exportBackup(): Promise<BackupFile> {
   const scenes = await database.getAll('scenes')
   const lines = await database.getAll('lines')
   const notes = await database.getAll('notes')
+  const characters = await database.getAll('characters')
   return {
     format: 'musical-memorization',
-    version: 3,
+    version: 4,
     exportedAt: Date.now(),
     tracks: tracks.map(({ blob: _blob, ...meta }) => meta satisfies TrackMeta),
     bookmarks,
     scenes,
     lines,
     notes,
+    characters,
   }
 }
 
@@ -207,6 +240,7 @@ export interface ImportResult {
   scenesAdded: number
   linesAdded: number
   notesAdded: number
+  charactersAdded: number
   namesUpdated: number
 }
 
@@ -348,12 +382,29 @@ export async function importBackup(backup: BackupFile): Promise<ImportResult> {
     await noteTx.done
   }
 
+  // Characters are mirrored the same way as scenes. Backups that predate
+  // characters omit the field and must not wipe the local set.
+  let charactersAdded = 0
+  if (backup.characters) {
+    const keepIds = new Set(backup.characters.map((c) => c.id))
+    const characterTx = database.transaction('characters', 'readwrite')
+    for (const existing of await characterTx.store.getAllKeys()) {
+      if (!keepIds.has(existing as string)) await characterTx.store.delete(existing)
+    }
+    for (const character of backup.characters) {
+      await characterTx.store.put(character)
+      charactersAdded += 1
+    }
+    await characterTx.done
+  }
+
   return {
     bookmarksAdded: added,
     bookmarksSkipped: skipped,
     scenesAdded,
     linesAdded,
     notesAdded,
+    charactersAdded,
     namesUpdated,
   }
 }

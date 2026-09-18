@@ -2,6 +2,8 @@ export interface VoiceOption {
   id: string
   label: string
   lang: string
+  /** Other voice URIs that are the same voice under another engine, hidden from pickers. */
+  alternateIds: string[]
 }
 
 export interface SpeakOptions {
@@ -20,6 +22,51 @@ export const speechSupported = typeof window !== 'undefined' && 'speechSynthesis
 let voiceCache: SpeechSynthesisVoice[] | null = null
 
 /**
+ * Windows lists many voices twice: "Microsoft Zira" and the older "Microsoft
+ * Zira Desktop". They sound alike, so the picker keeps one (preferring the
+ * newer, non-Desktop one) and remembers the other as an alternate so a line or
+ * character saved against it still shows as selected. English comes first.
+ */
+function distinctVoices(voices: SpeechSynthesisVoice[]): VoiceOption[] {
+  const byKey = new Map<string, VoiceOption & { desktop: boolean }>()
+  for (const voice of voices) {
+    const desktop = /\sDesktop\b/i.test(voice.name)
+    const key = `${voice.name.replace(/\sDesktop\b/i, '').toLowerCase()}|${voice.lang.toLowerCase()}`
+    const option = {
+      id: voice.voiceURI,
+      label: `${voice.name}${voice.default ? ' (default)' : ''}`,
+      lang: voice.lang,
+      alternateIds: [] as string[],
+      desktop,
+    }
+    const kept = byKey.get(key)
+    if (!kept) {
+      byKey.set(key, option)
+    } else if (kept.desktop && !desktop) {
+      option.alternateIds = [kept.id, ...kept.alternateIds]
+      byKey.set(key, option)
+    } else {
+      kept.alternateIds.push(option.id)
+    }
+  }
+  const isEnglish = (option: VoiceOption) => option.lang.toLowerCase().startsWith('en')
+  return [...byKey.values()]
+    .map(({ desktop: _desktop, ...option }) => option)
+    .sort(
+      (a, b) =>
+        Number(isEnglish(b)) - Number(isEnglish(a)) ||
+        a.lang.localeCompare(b.lang) ||
+        a.label.localeCompare(b.label),
+    )
+}
+
+/** The picker value for a saved voice id, following it to its visible twin if it was deduplicated. */
+export function pickerValue(voices: VoiceOption[], voiceId: string | null): string {
+  if (!voiceId) return ''
+  return voices.find((v) => v.id === voiceId || v.alternateIds.includes(voiceId))?.id ?? voiceId
+}
+
+/**
  * Voices arrive asynchronously in most browsers, and the first call to
  * getVoices() often returns an empty list.
  */
@@ -30,13 +77,7 @@ export function loadVoices(): Promise<VoiceOption[]> {
       const voices = window.speechSynthesis.getVoices()
       if (voices.length === 0) return false
       voiceCache = voices
-      resolve(
-        voices.map((voice) => ({
-          id: voice.voiceURI,
-          label: `${voice.name}${voice.default ? ' (default)' : ''}`,
-          lang: voice.lang,
-        })),
-      )
+      resolve(distinctVoices(voices))
       return true
     }
     if (collect()) return

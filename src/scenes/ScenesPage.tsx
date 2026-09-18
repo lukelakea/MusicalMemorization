@@ -1,22 +1,46 @@
 import { useEffect, useState } from 'react'
-import type { Scene } from '../lib/types'
+import type { Character, Scene } from '../lib/types'
 import type { VoiceOption } from '../lib/speech'
 import { loadVoices } from '../lib/speech'
-import { deleteScene, getScenes, newId, putScene, reorder } from '../lib/db'
-import { SceneEditor } from './SceneEditor'
+import { deleteScene, getCharacters, getScenes, newId, putScene, reorder } from '../lib/db'
+import { SceneEditor, type PlaybackSettings } from './SceneEditor'
 
 export function ScenesPage() {
   const [scenes, setScenes] = useState<Scene[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [voices, setVoices] = useState<VoiceOption[]>([])
+  const [characters, setCharacters] = useState<Character[]>([])
+  const [settings, setSettings] = useState<PlaybackSettings>({
+    speed: 1,
+    speakMyLines: false,
+    cueMode: false,
+    autoAdvance: false,
+  })
+  // Set when a finished scene hands over to the next one, so that scene starts itself.
+  const [autoPlayId, setAutoPlayId] = useState<string | null>(null)
 
   useEffect(() => {
     getScenes().then((loaded) => {
       setScenes(loaded)
       setSelectedId((current) => current ?? loaded[0]?.id ?? null)
     })
+    getCharacters().then(setCharacters)
     loadVoices().then(setVoices)
   }, [])
+
+  // Picking a scene by hand must never trigger a leftover auto-start.
+  function selectScene(id: string | null) {
+    setAutoPlayId(null)
+    setSelectedId(id)
+  }
+
+  function sceneFinished(id: string) {
+    if (!settings.autoAdvance) return
+    const next = scenes[scenes.findIndex((scene) => scene.id === id) + 1]
+    if (!next) return
+    setAutoPlayId(next.id)
+    setSelectedId(next.id)
+  }
 
   const selected = scenes.find((scene) => scene.id === selectedId) ?? null
 
@@ -29,7 +53,7 @@ export function ScenesPage() {
     }
     await putScene(scene)
     setScenes(await getScenes())
-    setSelectedId(scene.id)
+    selectScene(scene.id)
   }
 
   async function renameScene(id: string, title: string) {
@@ -51,7 +75,7 @@ export function ScenesPage() {
     const remaining = (await getScenes()).map((scene, index) => ({ ...scene, order: index }))
     await Promise.all(remaining.map((scene) => putScene(scene)))
     setScenes(remaining)
-    if (selectedId === id) setSelectedId(remaining[0]?.id ?? null)
+    if (selectedId === id) selectScene(remaining[0]?.id ?? null)
   }
 
   return (
@@ -74,7 +98,7 @@ export function ScenesPage() {
               <li key={scene.id} className="scene-item-row">
                 <button
                   className={`track-item ${scene.id === selectedId ? 'is-selected' : ''}`}
-                  onClick={() => setSelectedId(scene.id)}
+                  onClick={() => selectScene(scene.id)}
                 >
                   <span className="track-item-name">{scene.title}</span>
                 </button>
@@ -107,6 +131,11 @@ export function ScenesPage() {
           key={selected.id}
           scene={selected}
           voices={voices}
+          characters={characters}
+          settings={settings}
+          onSettingsChange={(patch) => setSettings((current) => ({ ...current, ...patch }))}
+          autoPlay={selected.id === autoPlayId}
+          onFinished={() => sceneFinished(selected.id)}
           onRename={(title) => void renameScene(selected.id, title)}
           onDelete={() => void removeScene(selected.id)}
         />

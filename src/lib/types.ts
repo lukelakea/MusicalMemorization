@@ -31,13 +31,31 @@ export interface BackupFile {
    * 1 predates the scenes module and carries no scenes or lines.
    * 2 predates track notes.
    */
-  version: 1 | 2 | 3
+  version: 1 | 2 | 3 | 4
   exportedAt: number
   tracks: TrackMeta[]
   bookmarks: Bookmark[]
   scenes?: Scene[]
   lines?: Line[]
   notes?: Note[]
+  characters?: Character[]
+}
+
+/**
+ * A speaker with one consistent voice. Any line whose speaker matches the name
+ * (or an alias) is read in this voice unless the line picks its own.
+ */
+export interface Character {
+  id: string
+  name: string
+  /** Other spellings of the speaker label that should map to this character. */
+  aliases: string[]
+  /** Voice URI from the Web Speech API; null falls back to the system default. */
+  voiceId: string | null
+  /** Baseline that each line's own rate/pitch is multiplied against. */
+  rate: number
+  pitch: number
+  createdAt: number
 }
 
 /** Freeform lyrics/blocking text for a track, kept separate from bookmarks. */
