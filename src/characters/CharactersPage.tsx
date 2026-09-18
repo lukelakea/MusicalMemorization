@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Character, Line } from '../lib/types'
 import type { SpeechHandle, VoiceOption } from '../lib/speech'
-import { loadVoices, pickerValue, speak, speechSupported } from '../lib/speech'
+import {
+  getShowAllLanguages,
+  loadVoices,
+  pickerValue,
+  pickerVoices,
+  setShowAllLanguages,
+  speak,
+  speechSupported,
+} from '../lib/speech'
 import { unassignedSpeakers } from '../lib/characters'
 import {
   deleteCharacter,
@@ -20,6 +28,7 @@ export function CharactersPage() {
   const [characters, setCharacters] = useState<Character[]>([])
   const [lines, setLines] = useState<Line[]>([])
   const [voices, setVoices] = useState<VoiceOption[]>([])
+  const [showAllLanguages, setShowAll] = useState(getShowAllLanguages)
   const [newName, setNewName] = useState('')
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   const preview = useRef<SpeechHandle | null>(null)
@@ -85,6 +94,23 @@ export function CharactersPage() {
           Edge on desktop works.
         </p>
       )}
+
+      <label className="inline-check voice-filter">
+        <input
+          type="checkbox"
+          checked={showAllLanguages}
+          onChange={(e) => {
+            setShowAll(e.target.checked)
+            setShowAllLanguages(e.target.checked)
+          }}
+        />
+        Show voices for other languages
+        <span className="hint">
+          {' '}
+          ({voices.filter((v) => v.lang.toLowerCase().startsWith('en')).length} English of{' '}
+          {voices.length} on this device)
+        </span>
+      </label>
 
       {unassigned.length > 0 && (
         <section className="unassigned">
@@ -184,7 +210,7 @@ export function CharactersPage() {
                     }
                   >
                     <option value="">System default</option>
-                    {voices.map((voice) => (
+                    {pickerVoices(voices, showAllLanguages, character.voiceId).map((voice) => (
                       <option key={voice.id} value={voice.id}>
                         {voice.label} — {voice.lang}
                       </option>

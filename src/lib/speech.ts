@@ -28,36 +28,88 @@ let voiceCache: SpeechSynthesisVoice[] | null = null
  * character saved against it still shows as selected. English comes first.
  */
 function distinctVoices(voices: SpeechSynthesisVoice[]): VoiceOption[] {
-  const byKey = new Map<string, VoiceOption & { desktop: boolean }>()
+  const isDesktop = (voice: SpeechSynthesisVoice) => /\sDesktop\b/i.test(voice.name)
+  const twinKey = (voice: SpeechSynthesisVoice) =>
+    `${voice.name.replace(/\sDesktop\b/i, '').toLowerCase()}|${voice.lang.toLowerCase()}`
+
+  const toOption = (voice: SpeechSynthesisVoice): VoiceOption => ({
+    id: voice.voiceURI,
+    label: `${voice.name}${voice.default ? ' (default)' : ''}`,
+    lang: voice.lang,
+    alternateIds: [],
+  })
+
+  // Only a "Desktop" voice with a non-Desktop twin is a duplicate. Two voices
+  // that merely share a name and language (Android lists several such
+  // variants) are different voices and must both stay.
+  const options: VoiceOption[] = []
+  const firstModern = new Map<string, VoiceOption>()
   for (const voice of voices) {
-    const desktop = /\sDesktop\b/i.test(voice.name)
-    const key = `${voice.name.replace(/\sDesktop\b/i, '').toLowerCase()}|${voice.lang.toLowerCase()}`
-    const option = {
-      id: voice.voiceURI,
-      label: `${voice.name}${voice.default ? ' (default)' : ''}`,
-      lang: voice.lang,
-      alternateIds: [] as string[],
-      desktop,
-    }
-    const kept = byKey.get(key)
-    if (!kept) {
-      byKey.set(key, option)
-    } else if (kept.desktop && !desktop) {
-      option.alternateIds = [kept.id, ...kept.alternateIds]
-      byKey.set(key, option)
-    } else {
-      kept.alternateIds.push(option.id)
-    }
+    if (isDesktop(voice)) continue
+    const option = toOption(voice)
+    options.push(option)
+    if (!firstModern.has(twinKey(voice))) firstModern.set(twinKey(voice), option)
   }
-  const isEnglish = (option: VoiceOption) => option.lang.toLowerCase().startsWith('en')
-  return [...byKey.values()]
-    .map(({ desktop: _desktop, ...option }) => option)
-    .sort(
-      (a, b) =>
-        Number(isEnglish(b)) - Number(isEnglish(a)) ||
-        a.lang.localeCompare(b.lang) ||
-        a.label.localeCompare(b.label),
-    )
+  for (const voice of voices) {
+    if (!isDesktop(voice)) continue
+    const twin = firstModern.get(twinKey(voice))
+    if (twin) twin.alternateIds.push(voice.voiceURI)
+    else options.push(toOption(voice))
+  }
+
+  // Voices sharing a label can't be told apart in a picker, so number them.
+  const labelTotals = new Map<string, number>()
+  for (const option of options) labelTotals.set(option.label, (labelTotals.get(option.label) ?? 0) + 1)
+  const labelSeen = new Map<string, number>()
+  const numbered = options.map((option) => {
+    if ((labelTotals.get(option.label) ?? 0) < 2) return option
+    const n = (labelSeen.get(option.label) ?? 0) + 1
+    labelSeen.set(option.label, n)
+    return { ...option, label: `${option.label} #${n}` }
+  })
+
+  return numbered.sort(
+    (a, b) =>
+      Number(isEnglishVoice(b)) - Number(isEnglishVoice(a)) ||
+      a.lang.localeCompare(b.lang) ||
+      a.label.localeCompare(b.label, undefined, { numeric: true }),
+  )
+}
+
+export function isEnglishVoice(voice: VoiceOption): boolean {
+  return voice.lang.toLowerCase().replace('_', '-').startsWith('en')
+}
+
+const SHOW_ALL_LANGUAGES_KEY = 'mm-show-all-languages'
+
+export function getShowAllLanguages(): boolean {
+  try {
+    return localStorage.getItem(SHOW_ALL_LANGUAGES_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function setShowAllLanguages(showAll: boolean): void {
+  try {
+    localStorage.setItem(SHOW_ALL_LANGUAGES_KEY, showAll ? '1' : '0')
+  } catch {
+    // Private mode or blocked storage: the preference just won't stick.
+  }
+}
+
+/**
+ * The voices a picker offers: English only unless the user asked for every
+ * language, but a voice that is already selected always stays listed.
+ */
+export function pickerVoices(
+  voices: VoiceOption[],
+  showAll: boolean,
+  selectedId: string | null,
+): VoiceOption[] {
+  if (showAll) return voices
+  const selected = pickerValue(voices, selectedId)
+  return voices.filter((voice) => isEnglishVoice(voice) || voice.id === selected)
 }
 
 /** The picker value for a saved voice id, following it to its visible twin if it was deduplicated. */
