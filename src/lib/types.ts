@@ -99,7 +99,5 @@ export interface Line {
    * the word count.
    */
   holdSec: number | null
-  /** Silence after the line, so the scene breathes and you can come in. */
-  delayAfterSec: number
   enabled: boolean
 }

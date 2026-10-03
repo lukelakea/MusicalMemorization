@@ -10,6 +10,8 @@ import { useScenePlayer } from './useScenePlayer'
 /** Playback settings live above the editor so they carry over when a scene auto-advances. */
 export interface PlaybackSettings {
   speed: number
+  /** Silence between lines, so the scene breathes and you can come in. */
+  delaySec: number
   speakMyLines: boolean
   cueMode: boolean
   autoAdvance: boolean
@@ -27,6 +29,8 @@ interface Props {
   onFinished: () => void
   onRename: (title: string) => void
   onDelete: () => void
+  /** Reports the "My line" count after every load or edit, for the scene list's count badge. */
+  onMyLineCountChange?: (count: number) => void
 }
 
 /** "MACBETH: Is this a dagger" -> speaker and text. */
@@ -63,14 +67,15 @@ export function SceneEditor({
   onFinished,
   onRename,
   onDelete,
+  onMyLineCountChange,
 }: Props) {
-  const { speed, speakMyLines, cueMode, autoAdvance } = settings
+  const { speed, delaySec, speakMyLines, cueMode, autoAdvance } = settings
   const [lines, setLines] = useState<Line[]>([])
   const [loaded, setLoaded] = useState(false)
   const [pasting, setPasting] = useState(false)
   const [pasteText, setPasteText] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const player = useScenePlayer(lines, { characters, speed, speakMyLines, onFinished })
+  const player = useScenePlayer(lines, { characters, speed, delaySec, speakMyLines, onFinished })
   const currentRef = useRef<HTMLLIElement>(null)
   const autoStarted = useRef(false)
 
@@ -94,6 +99,10 @@ export function SceneEditor({
 
   const enabledCount = useMemo(() => lines.filter((line) => line.enabled).length, [lines])
 
+  useEffect(() => {
+    onMyLineCountChange?.(lines.filter((line) => line.mode === 'mine').length)
+  }, [lines, onMyLineCountChange])
+
   async function refresh() {
     setLines(await getLines(scene.id))
   }
@@ -114,7 +123,6 @@ export function SceneEditor({
       rate: 1,
       pitch: 1,
       holdSec: null,
-      delayAfterSec: 0.8,
       enabled: true,
       ...seed,
     }
@@ -158,7 +166,6 @@ export function SceneEditor({
       rate: 1,
       pitch: 1,
       holdSec: null,
-      delayAfterSec: 0.8,
       enabled: true,
     }))
     await putLines(created)
@@ -227,9 +234,22 @@ export function SceneEditor({
             value={speed}
             onChange={(e) => onSettingsChange({ speed: Number(e.target.value) })}
           >
-            {[0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5].map((value) => (
+            {[0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3].map((value) => (
               <option key={value} value={value}>
                 {value}×
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="rate" title="Silence after every line, so the scene breathes and you can come in">
+          Delay
+          <select
+            value={delaySec}
+            onChange={(e) => onSettingsChange({ delaySec: Number(e.target.value) })}
+          >
+            {[0, 0.3, 0.5, 0.8, 1, 1.5, 2, 3].map((value) => (
+              <option key={value} value={value}>
+                {value}s
               </option>
             ))}
           </select>

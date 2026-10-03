@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Character, Scene } from '../lib/types'
 import type { VoiceOption } from '../lib/speech'
 import { loadVoices } from '../lib/speech'
-import { deleteScene, getCharacters, getScenes, newId, putScene, reorder } from '../lib/db'
+import { deleteScene, getAllLines, getCharacters, getScenes, newId, putScene, reorder } from '../lib/db'
 import { SceneEditor, type PlaybackSettings } from './SceneEditor'
 
 export function ScenesPage() {
@@ -10,8 +10,13 @@ export function ScenesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [voices, setVoices] = useState<VoiceOption[]>([])
   const [characters, setCharacters] = useState<Character[]>([])
+  // Count of "My line" entries, shown as a small badge next to each scene in
+  // the list. Loaded in bulk up front, then kept current for the open scene
+  // as its lines are edited.
+  const [myLineCounts, setMyLineCounts] = useState<Record<string, number>>({})
   const [settings, setSettings] = useState<PlaybackSettings>({
     speed: 1,
+    delaySec: 0.8,
     speakMyLines: false,
     cueMode: false,
     autoAdvance: false,
@@ -26,6 +31,14 @@ export function ScenesPage() {
     })
     getCharacters().then(setCharacters)
     loadVoices().then(setVoices)
+    getAllLines().then((allLines) => {
+      const counts: Record<string, number> = {}
+      for (const line of allLines) {
+        if (line.mode !== 'mine') continue
+        counts[line.sceneId] = (counts[line.sceneId] ?? 0) + 1
+      }
+      setMyLineCounts(counts)
+    })
   }, [])
 
   // Picking a scene by hand must never trigger a leftover auto-start.
@@ -101,6 +114,11 @@ export function ScenesPage() {
                   onClick={() => selectScene(scene.id)}
                 >
                   <span className="track-item-name">{scene.title}</span>
+                  {myLineCounts[scene.id] > 0 && (
+                    <span className="track-item-time" title="My lines in this scene">
+                      {myLineCounts[scene.id]}
+                    </span>
+                  )}
                 </button>
                 <div className="line-move">
                   <button
@@ -138,6 +156,11 @@ export function ScenesPage() {
           onFinished={() => sceneFinished(selected.id)}
           onRename={(title) => void renameScene(selected.id, title)}
           onDelete={() => void removeScene(selected.id)}
+          onMyLineCountChange={(count) =>
+            setMyLineCounts((current) =>
+              current[selected.id] === count ? current : { ...current, [selected.id]: count },
+            )
+          }
         />
       ) : (
         <section className="player player-empty">

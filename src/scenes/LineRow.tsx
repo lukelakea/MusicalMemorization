@@ -199,19 +199,6 @@ export function LineRow({
             )}
           </label>
         )}
-
-        <label title="Silence after this line">
-          Delay
-          <input
-            className="num"
-            type="number"
-            min={0}
-            step={0.5}
-            value={line.delayAfterSec}
-            onChange={(e) => onChange({ delayAfterSec: Number(e.target.value) || 0 })}
-          />
-          s
-        </label>
       </div>
     </li>
   )

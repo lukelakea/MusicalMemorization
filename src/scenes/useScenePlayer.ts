@@ -15,6 +15,8 @@ interface PlayerOptions {
   characters: Character[]
   /** Scene-wide multiplier over each line's own rate and every pause. */
   speed: number
+  /** Silence after every line, before speed scaling. */
+  delaySec: number
   /** Read "My line" entries aloud instead of waiting in silence. */
   speakMyLines: boolean
   /** Called when a pass reaches the end of the scene on its own, not on stop or pause. */
@@ -101,7 +103,7 @@ export function useScenePlayer(lines: Line[], options: PlayerOptions) {
         }
 
         if (runner.cancelled) return
-        await sleep(line.delayAfterSec / optionsRef.current.speed, runner)
+        await sleep(optionsRef.current.delaySec / optionsRef.current.speed, runner)
       }
 
       if (!runner.cancelled) {
