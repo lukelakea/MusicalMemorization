@@ -2,7 +2,16 @@ import { useEffect, useState } from 'react'
 import type { Character, Scene } from '../lib/types'
 import type { VoiceOption } from '../lib/speech'
 import { loadVoices } from '../lib/speech'
-import { deleteScene, getAllLines, getCharacters, getScenes, newId, putScene, reorder } from '../lib/db'
+import {
+  deleteScene,
+  getAllLines,
+  getCharacters,
+  getScenes,
+  newId,
+  putScene,
+  putScenes,
+  reorder,
+} from '../lib/db'
 import type { PlaybackSettings } from './playbackSettings'
 import { SceneEditor } from './SceneEditor'
 
@@ -79,13 +88,13 @@ export function ScenesPage({ settings, onSettingsChange }: Props) {
   async function moveScene(id: string, direction: -1 | 1) {
     const next = reorder(scenes, id, direction)
     setScenes(next)
-    await Promise.all(next.map((scene) => putScene(scene)))
+    await putScenes(next)
   }
 
   async function removeScene(id: string) {
     await deleteScene(id)
     const remaining = (await getScenes()).map((scene, index) => ({ ...scene, order: index }))
-    await Promise.all(remaining.map((scene) => putScene(scene)))
+    await putScenes(remaining)
     setScenes(remaining)
     if (selectedId === id) selectScene(remaining[0]?.id ?? null)
   }

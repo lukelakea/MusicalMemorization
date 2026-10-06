@@ -7,6 +7,11 @@ export interface Track {
   blob: Blob
   durationSec: number
   createdAt: number
+  /**
+   * Last edit on the device that made it, used to pick the newer side when a
+   * backup is merged. Missing on records saved before edits were tracked.
+   */
+  updatedAt?: number
 }
 
 /** A track row without its audio payload, for list views and exports. */
@@ -39,6 +44,11 @@ export interface Bookmark {
   /** Playback rate applied when this bookmark is triggered. */
   rate: number
   createdAt: number
+  /**
+   * Last edit on the device that made it, used to pick the newer side when a
+   * backup is merged. Missing on records saved before edits were tracked.
+   */
+  updatedAt?: number
 }
 
 export interface BackupFile {
@@ -47,8 +57,9 @@ export interface BackupFile {
    * 1 predates the scenes module and carries no scenes or lines.
    * 2 predates track notes.
    * 4 predates dances.
+   * 5 predates edit times and deletion records, so it can only add and update.
    */
-  version: 1 | 2 | 3 | 4 | 5
+  version: 1 | 2 | 3 | 4 | 5 | 6
   exportedAt: number
   tracks: TrackMeta[]
   bookmarks: Bookmark[]
@@ -59,6 +70,30 @@ export interface BackupFile {
   dances?: Dance[]
   danceBookmarks?: Bookmark[]
   danceNotes?: Note[]
+  deletions?: Deletion[]
+}
+
+/** The stores whose deletions are carried to other devices by a backup. */
+export type DeletableStore =
+  | 'scenes'
+  | 'lines'
+  | 'characters'
+  | 'bookmarks'
+  | 'notes'
+  | 'danceBookmarks'
+  | 'danceNotes'
+
+/**
+ * Left behind when something is deleted, so a merge can tell "deleted here"
+ * apart from "never existed here" and remove it on the other device too.
+ */
+export interface Deletion {
+  /** `${store}:${id}` — the store's own key, since ids are only unique per store. */
+  key: string
+  store: DeletableStore
+  /** The deleted record's id; for notes, the id of the track or dance it belonged to. */
+  id: string
+  deletedAt: number
 }
 
 /**
@@ -76,6 +111,11 @@ export interface Character {
   rate: number
   pitch: number
   createdAt: number
+  /**
+   * Last edit on the device that made it, used to pick the newer side when a
+   * backup is merged. Missing on records saved before edits were tracked.
+   */
+  updatedAt?: number
 }
 
 /** Freeform lyrics/blocking text for a track or dance, kept separate from bookmarks. */
@@ -93,6 +133,11 @@ export interface Scene {
   title: string
   order: number
   createdAt: number
+  /**
+   * Last edit on the device that made it, used to pick the newer side when a
+   * backup is merged. Missing on records saved before edits were tracked.
+   */
+  updatedAt?: number
 }
 
 /**
@@ -122,4 +167,9 @@ export interface Line {
   enabled: boolean
   /** Left out of the My Lines tab's playback only; scene playback ignores it. */
   skipInMyLines?: boolean
+  /**
+   * Last edit on the device that made it, used to pick the newer side when a
+   * backup is merged. Missing on records saved before edits were tracked.
+   */
+  updatedAt?: number
 }

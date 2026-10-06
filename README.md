@@ -30,10 +30,24 @@ Bookmarks belong to a single track and are deleted with it.
 
 ## Backups
 
-**Export backup** writes a JSON file of every track's metadata, bookmarks, scenes
-and lines (not the audio itself). **Import backup** merges one back in: bookmarks
-match their track by id and then by name, so re-import an audio file under its old
-name and its bookmarks reattach. Scenes are always added, never overwritten.
+**Export backup** writes a JSON file of everything except the audio and video
+themselves: track and dance details, bookmarks, notes, scenes, lines and
+characters. This is also how two devices (say a PC and a phone) stay in step.
+
+**Import backup** merges a backup into this device rather than replacing it:
+
+- You see what will change first: what gets added, updated, kept or removed.
+- Something only one device has is kept. Where both have a different version, the
+  one edited more recently wins, item by item.
+- Deletions carry over: something deleted on the other device is removed here too,
+  unless it was edited here after it was deleted there.
+- **Undo import** puts the device back as it was just before the last import.
+- Bookmarks and notes match their track by its original file name, so add the same
+  audio file on each device and they attach to it.
+- Voices stay per device, and deleting a track or dance only affects this device.
+
+Backups from before edit times were tracked can't carry deletions, and where both
+devices differ the backup's version is used.
 
 ## Scenes
 

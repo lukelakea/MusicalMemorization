@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { exportBackup, importBackup, requestPersistence } from './lib/db'
+import { ImportReview, UndoImportDialog } from './backup/ImportReview'
+import {
+  applyMerge,
+  exportBackup,
+  getImportSnapshot,
+  readLocalData,
+  requestPersistence,
+  undoLastImport,
+  type ImportSnapshot,
+} from './lib/db'
+import { BACKUP_VERSION, lastLocalEdit, planMerge, type LocalData, type MergePlan } from './lib/merge'
 import { loadVoices } from './lib/speech'
+import type { BackupFile } from './lib/types'
 import { CharactersPage } from './characters/CharactersPage'
 import { DancePage } from './dance/DancePage'
 import { MyLinesPage } from './mylines/MyLinesPage'
@@ -14,6 +25,15 @@ import { TracksPage } from './tracks/TracksPage'
 
 type Tab = 'tracks' | 'dance' | 'scenes' | 'mylines' | 'characters'
 
+/** A backup that has been read and merged on paper, waiting to be confirmed. */
+interface PendingImport {
+  fileName: string
+  backup: BackupFile
+  /** This device's data the plan was made from; saved as the undo snapshot. */
+  local: LocalData
+  plan: MergePlan
+}
+
 export function App() {
   const [tab, setTab] = useState<Tab>('tracks')
   const [status, setStatus] = useState<string | null>(null)
@@ -26,9 +46,15 @@ export function App() {
       return next
     })
   const importInput = useRef<HTMLInputElement>(null)
+  const [review, setReview] = useState<PendingImport | null>(null)
+  const [snapshot, setSnapshot] = useState<ImportSnapshot | undefined>()
+  const [undoing, setUndoing] = useState(false)
+  // Bumped after an import or undo; keys the pages so they reload from the database.
+  const [dataVersion, setDataVersion] = useState(0)
 
   useEffect(() => {
     void requestPersistence()
+    void getImportSnapshot().then(setSnapshot)
   }, [])
 
   async function doExport() {
@@ -37,7 +63,13 @@ export function App() {
       new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }),
     )
     const link = document.createElement('a')
-    const stamp = new Date().toISOString().slice(0, 10)
+    // Local date and time, so several exports on one day don't all share a
+    // name and end up as easily-confused "(1)", "(2)" copies.
+    const now = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const stamp =
+      `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}` +
+      `-${pad(now.getHours())}${pad(now.getMinutes())}`
     link.href = url
     link.download = `musical-memorization-${stamp}.json`
     link.click()
@@ -46,32 +78,72 @@ export function App() {
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
   }
 
+  /** Reads a backup and works out the merge; nothing is written until it's confirmed. */
   async function doImport(file: File | undefined) {
     if (!file) return
     try {
-      // Voice ids belong to the device that picked them, so the import needs to
+      let backup: BackupFile
+      try {
+        backup = JSON.parse(await file.text())
+      } catch {
+        throw new Error('Not a Musical Memorization backup file.')
+      }
+      if (backup?.format !== 'musical-memorization') {
+        throw new Error('Not a Musical Memorization backup file.')
+      }
+      if (backup.version > BACKUP_VERSION) {
+        throw new Error(
+          'This backup comes from a newer version of the app. Close and reopen the app to update it, then import again.',
+        )
+      }
+      // Voice ids belong to the device that picked them, so the merge needs to
       // know which voices exist here to decide whether a backup's voice is usable.
       const voices = await loadVoices()
       const knownVoiceIds = new Set(voices.flatMap((v) => [v.id, ...v.alternateIds]))
-      const result = await importBackup(JSON.parse(await file.text()), knownVoiceIds)
-      setStatus(
-        `Imported ${result.bookmarksAdded} bookmark(s), ` +
-          `${result.scenesAdded} scene(s), ${result.linesAdded} line(s), ` +
-          `${result.notesAdded} note(s), ${result.charactersAdded} character(s), renamed ${result.namesUpdated} track(s).` +
-          (result.bookmarksSkipped
-            ? ` Skipped ${result.bookmarksSkipped} bookmark(s) whose track is not imported here yet.`
-            : '') +
-          (result.danceBookmarksAdded || result.danceNotesAdded || result.dancesUpdated
-            ? ` Dance: ${result.danceBookmarksAdded} bookmark(s), ${result.danceNotesAdded} note(s), updated ${result.dancesUpdated} dance(s).`
-            : '') +
-          (result.danceBookmarksSkipped
-            ? ` Skipped ${result.danceBookmarksSkipped} dance bookmark(s) whose video is not imported here yet.`
-            : ''),
-      )
+      const local = await readLocalData()
+      setReview({
+        fileName: file.name,
+        backup,
+        local,
+        plan: planMerge(local, backup, knownVoiceIds),
+      })
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Import failed.')
     } finally {
       if (importInput.current) importInput.current.value = ''
+    }
+  }
+
+  async function confirmImport() {
+    if (!review) return
+    try {
+      await applyMerge(review.plan, review.local, review.fileName)
+      const { summary } = review.plan
+      setStatus(
+        `Imported ${review.fileName}: ${summary.added.length} added, ${summary.replaced.length} updated, ` +
+          `${summary.removed.length} removed, ${summary.keptLocal.length} kept as they were here.`,
+      )
+      setSnapshot(await getImportSnapshot())
+      // Remount the pages so none of them keeps showing — and later saves —
+      // the data as it was before the import.
+      setDataVersion((version) => version + 1)
+    } catch (error) {
+      setStatus(error instanceof Error ? `Import failed: ${error.message}` : 'Import failed.')
+    } finally {
+      setReview(null)
+    }
+  }
+
+  async function confirmUndo() {
+    try {
+      await undoLastImport()
+      setStatus('Undid the last import.')
+      setSnapshot(undefined)
+      setDataVersion((version) => version + 1)
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Undo failed.')
+    } finally {
+      setUndoing(false)
     }
   }
 
@@ -118,6 +190,11 @@ export function App() {
           <button className="ghost" onClick={() => importInput.current?.click()}>
             Import backup
           </button>
+          {snapshot && (
+            <button className="ghost" onClick={() => setUndoing(true)}>
+              Undo import
+            </button>
+          )}
           <input
             ref={importInput}
             type="file"
@@ -134,7 +211,27 @@ export function App() {
         </div>
       )}
 
-      <main>
+      {review && (
+        <ImportReview
+          fileName={review.fileName}
+          plan={review.plan}
+          backupVersion={review.backup.version}
+          exportedAt={review.backup.exportedAt}
+          lastLocalEdit={lastLocalEdit(review.local)}
+          onConfirm={confirmImport}
+          onCancel={() => setReview(null)}
+        />
+      )}
+      {undoing && snapshot && (
+        <UndoImportDialog
+          fileName={snapshot.fileName}
+          takenAt={snapshot.takenAt}
+          onConfirm={confirmUndo}
+          onCancel={() => setUndoing(false)}
+        />
+      )}
+
+      <main key={dataVersion}>
         {tab === 'tracks' ? (
           <TracksPage />
         ) : tab === 'dance' ? (
