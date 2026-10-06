@@ -88,6 +88,10 @@ export function CharactersPage() {
         punctuation and anything in brackets, so &ldquo;Macbeth (aside)&rdquo; matches
         &ldquo;MACBETH&rdquo;; add aliases for other spellings such as &ldquo;Mac&rdquo;.
       </p>
+      <p className="hint">
+        Voices on a phone all sound the same?{' '}
+        <a href="#voice-lab">Try the natural voices test</a>.
+      </p>
       {!speechSupported && (
         <p className="empty">
           This browser has no speech synthesis, so voices can&rsquo;t be tested here. Chrome or

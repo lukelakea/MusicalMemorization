@@ -35,6 +35,9 @@ export default defineConfig({
         // Audio blobs and app data live in IndexedDB, not the cache — only the
         // app shell (JS/CSS/HTML) needs precaching for offline use.
         globPatterns: ['**/*.{js,css,html,png,svg}'],
+        // The voice lab's model runtime is several MB and only fetched when the
+        // lab is opened, so it isn't worth precaching.
+        globIgnores: ['**/kokoroWorker-*.js', '**/ort-*.wasm'],
       },
     }),
   ],
@@ -42,5 +45,9 @@ export default defineConfig({
     // Exposed on the LAN so the app can be opened from a phone at rehearsal.
     host: true,
     port,
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+    },
   },
 })

@@ -22,6 +22,7 @@ import {
 } from './scenes/playbackSettings'
 import { ScenesPage } from './scenes/ScenesPage'
 import { TracksPage } from './tracks/TracksPage'
+import { VoiceLabPage } from './voicelab/VoiceLabPage'
 
 type Tab = 'tracks' | 'dance' | 'scenes' | 'mylines' | 'characters'
 
@@ -35,6 +36,13 @@ interface PendingImport {
 }
 
 export function App() {
+  // The voice lab is a test bench, reached only by its link (#voice-lab).
+  const [hash, setHash] = useState(() => window.location.hash)
+  useEffect(() => {
+    const onHash = () => setHash(window.location.hash)
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
   const [tab, setTab] = useState<Tab>('tracks')
   const [status, setStatus] = useState<string | null>(null)
   // Held here, above the pages, so speed and delay survive switching tabs.
@@ -45,6 +53,11 @@ export function App() {
       savePlaybackSettings(next)
       return next
     })
+  function openTab(next: Tab) {
+    if (window.location.hash) history.replaceState(null, '', window.location.pathname + window.location.search)
+    setHash('')
+    setTab(next)
+  }
   const importInput = useRef<HTMLInputElement>(null)
   const [review, setReview] = useState<PendingImport | null>(null)
   const [snapshot, setSnapshot] = useState<ImportSnapshot | undefined>()
@@ -154,31 +167,31 @@ export function App() {
         <nav className="tabs">
           <button
             className={tab === 'tracks' ? 'is-active' : ''}
-            onClick={() => setTab('tracks')}
+            onClick={() => openTab('tracks')}
           >
             Tracks
           </button>
           <button
             className={tab === 'dance' ? 'is-active' : ''}
-            onClick={() => setTab('dance')}
+            onClick={() => openTab('dance')}
           >
             Dance
           </button>
           <button
             className={tab === 'scenes' ? 'is-active' : ''}
-            onClick={() => setTab('scenes')}
+            onClick={() => openTab('scenes')}
           >
             Scenes
           </button>
           <button
             className={tab === 'mylines' ? 'is-active' : ''}
-            onClick={() => setTab('mylines')}
+            onClick={() => openTab('mylines')}
           >
             My Lines
           </button>
           <button
             className={tab === 'characters' ? 'is-active' : ''}
-            onClick={() => setTab('characters')}
+            onClick={() => openTab('characters')}
           >
             Characters
           </button>
@@ -232,7 +245,9 @@ export function App() {
       )}
 
       <main key={dataVersion}>
-        {tab === 'tracks' ? (
+        {hash === '#voice-lab' ? (
+          <VoiceLabPage />
+        ) : tab === 'tracks' ? (
           <TracksPage />
         ) : tab === 'dance' ? (
           <DancePage />
