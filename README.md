@@ -44,7 +44,7 @@ characters. This is also how two devices (say a PC and a phone) stay in step.
 - **Undo import** puts the device back as it was just before the last import.
 - Bookmarks and notes match their track by its original file name, so add the same
   audio file on each device and they attach to it.
-- Voices stay per device, and deleting a track or dance only affects this device.
+- Device voices stay per device (natural voices carry over), and deleting a track or dance only affects this device.
 
 Backups from before edit times were tracked can't carry deletions, and where both
 devices differ the backup's version is used.
@@ -67,5 +67,21 @@ you type in or paste.
 - Play / Pause / Stop / Prev / Next, or ▶ on any line to start from there. Pausing
   mid-line restarts that line rather than resuming halfway through it.
 
-Voices come from the browser's own speech synthesis (Chrome or Edge on desktop
-give the best set on Windows). Nothing is sent anywhere to produce them.
+### Voices
+
+Two kinds, both picked per character or per line:
+
+- **Natural voices** (American and British, men and women) run on this device
+  using the Kokoro voice model. The first use downloads the model (about 90 MB,
+  once). Each line's audio is made once and saved, so it then plays instantly;
+  **Speed** speeds up the saved audio without changing its pitch, so it never
+  needs remaking. **Prepare voices** on a scene makes every line ahead of
+  rehearsal. A line that isn't ready yet is read by the system voice and made in
+  the background for next time. Editing a line's text remakes only that line.
+  Natural voices sound the same everywhere, so a character's natural voice
+  carries over in a backup (the saved audio itself doesn't, yet).
+- **This device's voices** come from the browser's own speech synthesis. On
+  Windows, Chrome or Edge give a good set; on Android, Chrome plays the phone's
+  one default voice whichever is picked.
+
+Nothing is sent anywhere to produce either kind.

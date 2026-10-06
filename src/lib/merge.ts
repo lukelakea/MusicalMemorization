@@ -10,6 +10,7 @@ import type {
   Scene,
   TrackMeta,
 } from './types'
+import { isNaturalVoice } from './naturalVoices'
 
 /** Everything a backup carries, read from this device's database. */
 export type LocalData = Required<Omit<BackupFile, 'format' | 'version' | 'exportedAt'>>
@@ -105,8 +106,15 @@ function mergeVoiceId(
   incoming: string | null | undefined,
   known: ReadonlySet<string>,
 ): string | null {
+  // A natural voice is the same everywhere, so it travels like any other field.
+  if (isNaturalVoice(incoming)) return incoming
   if (local) return local
   return incoming && known.has(incoming) ? incoming : null
+}
+
+/** The backup picked a different natural voice, which unlike a device voice carries over. */
+function naturalVoiceChanged(local: { voiceId: string | null }, incoming: { voiceId: string | null }) {
+  return isNaturalVoice(incoming.voiceId) && incoming.voiceId !== local.voiceId
 }
 
 interface CollectionOptions<T> {
@@ -117,6 +125,8 @@ interface CollectionOptions<T> {
   label: (record: T) => string
   /** Fields that may differ without counting as a change, e.g. per-device voices. */
   ignore?: readonly string[]
+  /** A difference that counts as a change even though its field is in `ignore`. */
+  differs?: (local: T, incoming: T) => boolean
   /** Fills in device-specific fields when the backup's version is written here. */
   adopt?: (incoming: T, local: T | undefined) => T
 }
@@ -134,7 +144,7 @@ function mergeCollection<T extends { updatedAt?: number }>(
   deletedIncoming: ReadonlyMap<string, number>,
   summary: MergeSummary,
 ) {
-  const { store, keyOf, label, ignore = [], adopt = (record: T) => record } = options
+  const { store, keyOf, label, ignore = [], differs, adopt = (record: T) => record } = options
   const localByKey = new Map(options.local.map((record) => [keyOf(record), record]))
   const incomingByKey = new Map(options.incoming.map((record) => [keyOf(record), record]))
   const result = new Map(localByKey)
@@ -162,7 +172,7 @@ function mergeCollection<T extends { updatedAt?: number }>(
       summary.added.push(label(incoming))
       continue
     }
-    if (sameRecord(local, incoming, [...ignore, 'updatedAt'])) continue
+    if (sameRecord(local, incoming, [...ignore, 'updatedAt']) && !differs?.(local, incoming)) continue
     if (editedAt(incoming) >= editedAt(local)) {
       const replaced = adopt(incoming, local)
       result.set(key, replaced)
@@ -376,6 +386,7 @@ export function planMerge(
       keyOf: (character) => character.id,
       label: (character) => `Character ${character.name}`,
       ignore: ['voiceId'],
+      differs: naturalVoiceChanged,
       adopt: (incoming, existing) => ({
         ...incoming,
         voiceId: mergeVoiceId(existing?.voiceId, incoming.voiceId, knownVoiceIds),
@@ -411,6 +422,7 @@ export function planMerge(
         return `${sceneTitle(line.sceneId)}: ${line.speaker ? `${line.speaker}: ` : ''}${text}`
       },
       ignore: ['voiceId'],
+      differs: naturalVoiceChanged,
       adopt: (incoming, existing) => ({
         ...incoming,
         voiceId: mergeVoiceId(existing?.voiceId, incoming.voiceId, knownVoiceIds),

@@ -503,3 +503,18 @@ button.tiny { padding: 1px 6px; font-size: 11px; line-height: 1.3; }
 .lab-slow { color: var(--danger); }
 .voice-lab .hint { color: var(--muted); word-break: break-word; }
 .characters-page a { color: var(--accent); }
+
+.prepare-voices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  font-size: 14px;
+}
+.prepare-voices .natural-status { flex-basis: 100%; margin: 0; }
+.natural-status { color: var(--muted); }

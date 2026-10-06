@@ -5,11 +5,12 @@ import {
   getShowAllLanguages,
   loadVoices,
   pickerValue,
-  pickerVoices,
   setShowAllLanguages,
-  speak,
   speechSupported,
 } from '../lib/speech'
+import { isNaturalVoice, speakAny } from '../lib/natural'
+import { NaturalStatus } from '../voices/NaturalStatus'
+import { VoiceOptions } from '../voices/VoiceOptions'
 import { unassignedSpeakers } from '../lib/characters'
 import {
   deleteCharacter,
@@ -72,11 +73,13 @@ export function CharactersPage() {
 
   function testVoice(character: Character) {
     preview.current?.cancel()
-    preview.current = speak(`${character.name}. To be, or not to be, that is the question.`, {
-      voiceId: character.voiceId,
-      rate: character.rate,
-      pitch: character.pitch,
-    })
+    // A natural voice is made on the spot here (a few seconds the first
+    // time) rather than standing in with the system voice.
+    preview.current = speakAny(
+      `${character.name}. To be, or not to be, that is the question.`,
+      { voiceId: character.voiceId, rate: character.rate, pitch: character.pitch },
+      { wait: true },
+    )
   }
 
   return (
@@ -88,10 +91,13 @@ export function CharactersPage() {
         punctuation and anything in brackets, so &ldquo;Macbeth (aside)&rdquo; matches
         &ldquo;MACBETH&rdquo;; add aliases for other spellings such as &ldquo;Mac&rdquo;.
       </p>
-      <p className="hint">
-        Voices on a phone all sound the same?{' '}
-        <a href="#voice-lab">Try the natural voices test</a>.
+      <p className="empty">
+        <strong>Natural voices</strong> sound the same on every device and carry over in a
+        backup. The first one you use downloads the voice model (about 90&nbsp;MB, once).
+        Each line is then made once and saved; use <em>Prepare voices</em> on a scene to make
+        them all ahead of rehearsal.
       </p>
+      <NaturalStatus />
       {!speechSupported && (
         <p className="empty">
           This browser has no speech synthesis, so voices can&rsquo;t be tested here. Chrome or
@@ -214,11 +220,11 @@ export function CharactersPage() {
                     }
                   >
                     <option value="">System default</option>
-                    {pickerVoices(voices, showAllLanguages, character.voiceId).map((voice) => (
-                      <option key={voice.id} value={voice.id}>
-                        {voice.label} — {voice.lang}
-                      </option>
-                    ))}
+                    <VoiceOptions
+                      voices={voices}
+                      showAllLanguages={showAllLanguages}
+                      selectedId={character.voiceId}
+                    />
                   </select>
                 </label>
                 <label>
@@ -234,9 +240,10 @@ export function CharactersPage() {
                     ))}
                   </select>
                 </label>
-                <label>
+                <label title={isNaturalVoice(character.voiceId) ? "Natural voices keep their own pitch" : undefined}>
                   Pitch
                   <select
+                    disabled={isNaturalVoice(character.voiceId)}
                     value={character.pitch}
                     onChange={(e) => void patchCharacter(character.id, { pitch: Number(e.target.value) })}
                   >

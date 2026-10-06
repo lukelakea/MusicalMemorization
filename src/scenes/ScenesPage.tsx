@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Character, Scene } from '../lib/types'
 import type { VoiceOption } from '../lib/speech'
 import { loadVoices } from '../lib/speech'
+import { naturalAudioFor, pruneAudio } from '../lib/natural'
 import {
   deleteScene,
   getAllLines,
@@ -37,9 +38,13 @@ export function ScenesPage({ settings, onSettingsChange }: Props) {
       setScenes(loaded)
       setSelectedId((current) => current ?? loaded[0]?.id ?? null)
     })
-    getCharacters().then(setCharacters)
     loadVoices().then(setVoices)
-    getAllLines().then((allLines) => {
+    void Promise.all([getAllLines(), getCharacters()]).then(([allLines, loadedCharacters]) => {
+      setCharacters(loadedCharacters)
+      // Saved natural voice audio no line uses any more (old wording, a
+      // changed voice) is cleared out so it doesn't pile up.
+      void pruneAudio(new Set(naturalAudioFor(allLines, loadedCharacters).map((item) => item.key)))
+
       const counts: Record<string, number> = {}
       for (const line of allLines) {
         if (line.mode !== 'mine') continue

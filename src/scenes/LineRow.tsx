@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import type { Character, Line, LineMode } from '../lib/types'
 import type { VoiceOption } from '../lib/speech'
-import { estimateSeconds, getShowAllLanguages, pickerValue, pickerVoices } from '../lib/speech'
+import { estimateSeconds, getShowAllLanguages, pickerValue } from '../lib/speech'
+import { isNaturalVoice } from '../lib/natural'
+import { VoiceOptions } from '../voices/VoiceOptions'
 
 interface Props {
   /** React 19 passes ref as a plain prop; the editor uses it to auto-scroll. */
@@ -41,6 +43,7 @@ export function LineRow({
   // In cue mode your own lines are covered up — that is the whole point of the
   // drill — until you ask to see them.
   const hidden = cueMode && line.mode === 'mine' && !peeking
+  const naturalVoice = isNaturalVoice(line.voiceId ?? character?.voiceId)
 
   return (
     <li
@@ -143,11 +146,11 @@ export function LineRow({
                     ? `${character.name}'s voice`
                     : 'System default'}
                 </option>
-                {pickerVoices(voices, getShowAllLanguages(), line.voiceId).map((voice) => (
-                  <option key={voice.id} value={voice.id}>
-                    {voice.label} — {voice.lang}
-                  </option>
-                ))}
+                <VoiceOptions
+                  voices={voices}
+                  showAllLanguages={getShowAllLanguages()}
+                  selectedId={line.voiceId}
+                />
               </select>
             </label>
             <label>
@@ -163,9 +166,10 @@ export function LineRow({
                 ))}
               </select>
             </label>
-            <label>
+            <label title={naturalVoice ? 'Natural voices keep their own pitch' : undefined}>
               Pitch
               <select
+                disabled={naturalVoice}
                 value={line.pitch}
                 onChange={(e) => onChange({ pitch: Number(e.target.value) })}
               >

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Character, Line } from '../lib/types'
 import { resolveSpeech } from '../lib/characters'
 import { estimateSeconds, speak } from '../lib/speech'
+import { naturalAudioFor, prepare, speakAny } from '../lib/natural'
 
 export type PlayerState = 'idle' | 'playing' | 'paused'
 
@@ -86,11 +87,14 @@ export function useScenePlayer(lines: Line[], options: PlayerOptions) {
         const line = sequence[i]
         if (runner.cancelled) return
         setCurrentLineId(line.id)
+        // Get the next few lines' natural audio made while this one plays, so
+        // an unprepared scene still mostly plays in its proper voices.
+        void prepare(naturalAudioFor(sequence.slice(i + 1, i + 4), optionsRef.current.characters))
 
         const speakLine = async (target: Line) => {
           const { characters, speed } = optionsRef.current
           const voice = resolveSpeech(target, characters)
-          const handle = speak(target.text, {
+          const handle = speakAny(target.text, {
             voiceId: voice.voiceId,
             // The Web Speech API rejects rates outside 0.1-10.
             rate: Math.min(10, Math.max(0.1, voice.rate * speed)),

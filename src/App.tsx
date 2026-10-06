@@ -11,6 +11,7 @@ import {
 } from './lib/db'
 import { BACKUP_VERSION, lastLocalEdit, planMerge, type LocalData, type MergePlan } from './lib/merge'
 import { loadVoices } from './lib/speech'
+import { NATURAL_VOICES } from './lib/natural'
 import type { BackupFile } from './lib/types'
 import { CharactersPage } from './characters/CharactersPage'
 import { DancePage } from './dance/DancePage'
@@ -22,7 +23,7 @@ import {
 } from './scenes/playbackSettings'
 import { ScenesPage } from './scenes/ScenesPage'
 import { TracksPage } from './tracks/TracksPage'
-import { VoiceLabPage } from './voicelab/VoiceLabPage'
+import { VoiceLabPage } from './voices/VoiceLabPage'
 
 type Tab = 'tracks' | 'dance' | 'scenes' | 'mylines' | 'characters'
 
@@ -112,7 +113,10 @@ export function App() {
       // Voice ids belong to the device that picked them, so the merge needs to
       // know which voices exist here to decide whether a backup's voice is usable.
       const voices = await loadVoices()
-      const knownVoiceIds = new Set(voices.flatMap((v) => [v.id, ...v.alternateIds]))
+      const knownVoiceIds = new Set([
+        ...voices.flatMap((v) => [v.id, ...v.alternateIds]),
+        ...NATURAL_VOICES.map((v) => v.id),
+      ])
       const local = await readLocalData()
       setReview({
         fileName: file.name,

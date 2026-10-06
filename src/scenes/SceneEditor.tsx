@@ -4,6 +4,7 @@ import type { VoiceOption } from '../lib/speech'
 import { speechSupported } from '../lib/speech'
 import { findCharacter } from '../lib/characters'
 import { deleteLine, getLines, newId, putLine, putLines, reorder } from '../lib/db'
+import { PrepareVoices } from '../voices/PrepareVoices'
 import { LineRow } from './LineRow'
 import { DELAY_OPTIONS, SPEED_OPTIONS, type PlaybackSettings } from './playbackSettings'
 import { useScenePlayer } from './useScenePlayer'
@@ -276,6 +277,8 @@ export function SceneEditor({
           Auto-play next scene
         </label>
       </div>
+
+      <PrepareVoices lines={lines} characters={characters} />
 
       {!speechSupported && (
         <p className="empty">

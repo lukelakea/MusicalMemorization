@@ -9,6 +9,7 @@ import type {
   DeletableStore,
   Deletion,
   Line,
+  LineAudio,
   Note,
   Scene,
   Track,
@@ -67,6 +68,10 @@ interface MMSchema extends DBSchema {
     key: string
     value: ImportSnapshot
   }
+  lineAudio: {
+    key: string
+    value: LineAudio
+  }
 }
 
 /** This device's data as it was just before the last import, so the import can be undone. */
@@ -81,7 +86,7 @@ export interface ImportSnapshot {
 const SNAPSHOT_ID = 'before-import'
 
 const DB_NAME = 'musical-memorization'
-const DB_VERSION = 6
+const DB_VERSION = 7
 
 let dbPromise: Promise<IDBPDatabase<MMSchema>> | null = null
 
@@ -117,6 +122,9 @@ function db() {
           // are next saved, which merging treats as older than any edit.
           database.createObjectStore('deletions', { keyPath: 'key' })
           database.createObjectStore('snapshots', { keyPath: 'id' })
+        }
+        if (oldVersion < 7) {
+          database.createObjectStore('lineAudio', { keyPath: 'key' })
         }
       },
     })
@@ -393,6 +401,24 @@ export async function putCharacters(characters: Character[]): Promise<void> {
 
 export async function deleteCharacter(id: string): Promise<void> {
   await deleteRecorded('characters', id)
+}
+
+export async function getLineAudio(key: string): Promise<LineAudio | undefined> {
+  return (await db()).get('lineAudio', key)
+}
+
+export async function putLineAudio(audio: LineAudio): Promise<void> {
+  await (await db()).put('lineAudio', audio)
+}
+
+export async function getLineAudioKeys(): Promise<string[]> {
+  return (await db()).getAllKeys('lineAudio')
+}
+
+export async function deleteLineAudio(keys: string[]): Promise<void> {
+  const tx = (await db()).transaction('lineAudio', 'readwrite')
+  await Promise.all(keys.map((key) => tx.store.delete(key)))
+  await tx.done
 }
 
 /**

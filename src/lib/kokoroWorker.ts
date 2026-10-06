@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 // Runs Kokoro off the main thread so a slow phone doesn't freeze the page
 // while it generates.
-import { KokoroTTS } from 'kokoro-js'
+import { KokoroTTS, TextSplitterStream } from 'kokoro-js'
 
 export type WorkerRequest =
   | { type: 'load'; device: 'wasm' | 'webgpu'; dtype: 'q8' | 'fp32' }
@@ -19,8 +19,8 @@ let tts: KokoroTTS | null = null
 const post = (message: WorkerResponse, transfer: Transferable[] = []) =>
   (self as unknown as DedicatedWorkerGlobalScope).postMessage(message, transfer)
 
-// One request at a time, so each timing measures that line alone rather than
-// several generations fighting over the CPU.
+// One request at a time: generations running side by side only slow each
+// other down.
 let queue = Promise.resolve()
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   queue = queue.then(() => handle(event.data))
@@ -43,11 +43,28 @@ async function handle(request: WorkerRequest) {
     } else {
       if (!tts) throw new Error('Model not loaded yet.')
       const started = performance.now()
-      const result = await tts.generate(request.text, {
+      // Kokoro only reads about 500 phonemes at a time, so a long speech is
+      // made sentence by sentence and joined.
+      const pieces: Float32Array[] = []
+      let sampleRate = 24000
+      // Given a plain string, stream() keeps waiting for more text after the
+      // last sentence; a closed splitter tells it the text is complete.
+      const splitter = new TextSplitterStream()
+      splitter.push(request.text)
+      splitter.close()
+      for await (const piece of tts.stream(splitter, {
         voice: request.voice as never,
         speed: request.speed,
-      })
-      const audio = result.audio as Float32Array
+      })) {
+        pieces.push(piece.audio.audio as Float32Array)
+        sampleRate = piece.audio.sampling_rate
+      }
+      const audio = new Float32Array(pieces.reduce((sum, p) => sum + p.length, 0))
+      let offset = 0
+      for (const p of pieces) {
+        audio.set(p, offset)
+        offset += p.length
+      }
       post(
         {
           type: 'generated',
@@ -55,7 +72,7 @@ async function handle(request: WorkerRequest) {
           voice: request.voice,
           seconds: (performance.now() - started) / 1000,
           audio,
-          sampleRate: result.sampling_rate,
+          sampleRate,
         },
         [audio.buffer],
       )
