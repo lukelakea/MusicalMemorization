@@ -2,14 +2,29 @@ import { useEffect, useRef, useState } from 'react'
 import { exportBackup, importBackup, requestPersistence } from './lib/db'
 import { loadVoices } from './lib/speech'
 import { CharactersPage } from './characters/CharactersPage'
+import { DancePage } from './dance/DancePage'
+import { MyLinesPage } from './mylines/MyLinesPage'
+import {
+  loadPlaybackSettings,
+  savePlaybackSettings,
+  type PlaybackSettings,
+} from './scenes/playbackSettings'
 import { ScenesPage } from './scenes/ScenesPage'
 import { TracksPage } from './tracks/TracksPage'
 
-type Tab = 'tracks' | 'scenes' | 'characters'
+type Tab = 'tracks' | 'dance' | 'scenes' | 'mylines' | 'characters'
 
 export function App() {
   const [tab, setTab] = useState<Tab>('tracks')
   const [status, setStatus] = useState<string | null>(null)
+  // Held here, above the pages, so speed and delay survive switching tabs.
+  const [settings, setSettings] = useState<PlaybackSettings>(loadPlaybackSettings)
+  const updateSettings = (patch: Partial<PlaybackSettings>) =>
+    setSettings((current) => {
+      const next = { ...current, ...patch }
+      savePlaybackSettings(next)
+      return next
+    })
   const importInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -45,6 +60,12 @@ export function App() {
           `${result.notesAdded} note(s), ${result.charactersAdded} character(s), renamed ${result.namesUpdated} track(s).` +
           (result.bookmarksSkipped
             ? ` Skipped ${result.bookmarksSkipped} bookmark(s) whose track is not imported here yet.`
+            : '') +
+          (result.danceBookmarksAdded || result.danceNotesAdded || result.dancesUpdated
+            ? ` Dance: ${result.danceBookmarksAdded} bookmark(s), ${result.danceNotesAdded} note(s), updated ${result.dancesUpdated} dance(s).`
+            : '') +
+          (result.danceBookmarksSkipped
+            ? ` Skipped ${result.danceBookmarksSkipped} dance bookmark(s) whose video is not imported here yet.`
             : ''),
       )
     } catch (error) {
@@ -66,10 +87,22 @@ export function App() {
             Tracks
           </button>
           <button
+            className={tab === 'dance' ? 'is-active' : ''}
+            onClick={() => setTab('dance')}
+          >
+            Dance
+          </button>
+          <button
             className={tab === 'scenes' ? 'is-active' : ''}
             onClick={() => setTab('scenes')}
           >
             Scenes
+          </button>
+          <button
+            className={tab === 'mylines' ? 'is-active' : ''}
+            onClick={() => setTab('mylines')}
+          >
+            My Lines
           </button>
           <button
             className={tab === 'characters' ? 'is-active' : ''}
@@ -102,7 +135,17 @@ export function App() {
       )}
 
       <main>
-        {tab === 'tracks' ? <TracksPage /> : tab === 'scenes' ? <ScenesPage /> : <CharactersPage />}
+        {tab === 'tracks' ? (
+          <TracksPage />
+        ) : tab === 'dance' ? (
+          <DancePage />
+        ) : tab === 'scenes' ? (
+          <ScenesPage settings={settings} onSettingsChange={updateSettings} />
+        ) : tab === 'mylines' ? (
+          <MyLinesPage settings={settings} onSettingsChange={updateSettings} />
+        ) : (
+          <CharactersPage />
+        )}
       </main>
     </div>
   )

@@ -3,9 +3,15 @@ import type { Character, Scene } from '../lib/types'
 import type { VoiceOption } from '../lib/speech'
 import { loadVoices } from '../lib/speech'
 import { deleteScene, getAllLines, getCharacters, getScenes, newId, putScene, reorder } from '../lib/db'
-import { SceneEditor, type PlaybackSettings } from './SceneEditor'
+import type { PlaybackSettings } from './playbackSettings'
+import { SceneEditor } from './SceneEditor'
 
-export function ScenesPage() {
+interface Props {
+  settings: PlaybackSettings
+  onSettingsChange: (patch: Partial<PlaybackSettings>) => void
+}
+
+export function ScenesPage({ settings, onSettingsChange }: Props) {
   const [scenes, setScenes] = useState<Scene[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [voices, setVoices] = useState<VoiceOption[]>([])
@@ -14,13 +20,6 @@ export function ScenesPage() {
   // the list. Loaded in bulk up front, then kept current for the open scene
   // as its lines are edited.
   const [myLineCounts, setMyLineCounts] = useState<Record<string, number>>({})
-  const [settings, setSettings] = useState<PlaybackSettings>({
-    speed: 1,
-    delaySec: 0.8,
-    speakMyLines: false,
-    cueMode: false,
-    autoAdvance: false,
-  })
   // Set when a finished scene hands over to the next one, so that scene starts itself.
   const [autoPlayId, setAutoPlayId] = useState<string | null>(null)
 
@@ -151,7 +150,7 @@ export function ScenesPage() {
           voices={voices}
           characters={characters}
           settings={settings}
-          onSettingsChange={(patch) => setSettings((current) => ({ ...current, ...patch }))}
+          onSettingsChange={onSettingsChange}
           autoPlay={selected.id === autoPlayId}
           onFinished={() => sceneFinished(selected.id)}
           onRename={(title) => void renameScene(selected.id, title)}

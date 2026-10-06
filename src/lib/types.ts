@@ -12,8 +12,24 @@ export interface Track {
 /** A track row without its audio payload, for list views and exports. */
 export type TrackMeta = Omit<Track, 'blob'>
 
+/**
+ * A dance video's details. The video itself lives in its own store
+ * (`DanceVideo`) so renaming or mirroring never rewrites a large file.
+ */
+export interface Dance extends TrackMeta {
+  /** Flipped left-to-right, so the dancer on screen moves like a mirror. */
+  mirrored: boolean
+  sizeBytes: number
+}
+
+export interface DanceVideo {
+  danceId: string
+  blob: Blob
+}
+
 export interface Bookmark {
   id: string
+  /** The track — or, in the dance stores, the dance — this bookmark belongs to. */
   trackId: string
   label: string
   startSec: number
@@ -30,8 +46,9 @@ export interface BackupFile {
   /**
    * 1 predates the scenes module and carries no scenes or lines.
    * 2 predates track notes.
+   * 4 predates dances.
    */
-  version: 1 | 2 | 3 | 4
+  version: 1 | 2 | 3 | 4 | 5
   exportedAt: number
   tracks: TrackMeta[]
   bookmarks: Bookmark[]
@@ -39,6 +56,9 @@ export interface BackupFile {
   lines?: Line[]
   notes?: Note[]
   characters?: Character[]
+  dances?: Dance[]
+  danceBookmarks?: Bookmark[]
+  danceNotes?: Note[]
 }
 
 /**
@@ -58,9 +78,9 @@ export interface Character {
   createdAt: number
 }
 
-/** Freeform lyrics/blocking text for a track, kept separate from bookmarks. */
+/** Freeform lyrics/blocking text for a track or dance, kept separate from bookmarks. */
 export interface Note {
-  /** One note per track, so the track's id doubles as the note's key. */
+  /** One note per track (or dance), so its id doubles as the note's key. */
   trackId: string
   text: string
   /** Toggled off while rehearsing, so it doesn't give the lines away. */
@@ -100,4 +120,6 @@ export interface Line {
    */
   holdSec: number | null
   enabled: boolean
+  /** Left out of the My Lines tab's playback only; scene playback ignores it. */
+  skipInMyLines?: boolean
 }

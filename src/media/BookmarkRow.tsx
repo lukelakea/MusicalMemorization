@@ -7,6 +7,7 @@ interface Props {
   index: number
   isActive: boolean
   currentTime: number
+  rates: number[]
   onPlay: () => void
   onChange: (patch: Partial<Bookmark>) => void
   onDelete: () => void
@@ -17,6 +18,7 @@ export function BookmarkRow({
   index,
   isActive,
   currentTime,
+  rates,
   onPlay,
   onChange,
   onDelete,
@@ -155,7 +157,7 @@ export function BookmarkRow({
                 value={bookmark.rate}
                 onChange={(e) => onChange({ rate: Number(e.target.value) })}
               >
-                {[0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 1, 1.1, 1.25].map((r) => (
+                {rates.map((r) => (
                   <option key={r} value={r}>
                     {r}×
                   </option>

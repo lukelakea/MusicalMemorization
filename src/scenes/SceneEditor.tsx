@@ -5,17 +5,8 @@ import { speechSupported } from '../lib/speech'
 import { findCharacter } from '../lib/characters'
 import { deleteLine, getLines, newId, putLine, putLines, reorder } from '../lib/db'
 import { LineRow } from './LineRow'
+import { DELAY_OPTIONS, SPEED_OPTIONS, type PlaybackSettings } from './playbackSettings'
 import { useScenePlayer } from './useScenePlayer'
-
-/** Playback settings live above the editor so they carry over when a scene auto-advances. */
-export interface PlaybackSettings {
-  speed: number
-  /** Silence between lines, so the scene breathes and you can come in. */
-  delaySec: number
-  speakMyLines: boolean
-  cueMode: boolean
-  autoAdvance: boolean
-}
 
 interface Props {
   scene: Scene
@@ -234,7 +225,7 @@ export function SceneEditor({
             value={speed}
             onChange={(e) => onSettingsChange({ speed: Number(e.target.value) })}
           >
-            {[0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3].map((value) => (
+            {SPEED_OPTIONS.map((value) => (
               <option key={value} value={value}>
                 {value}×
               </option>
@@ -247,7 +238,7 @@ export function SceneEditor({
             value={delaySec}
             onChange={(e) => onSettingsChange({ delaySec: Number(e.target.value) })}
           >
-            {[0, 0.3, 0.5, 0.8, 1, 1.5, 2, 3].map((value) => (
+            {DELAY_OPTIONS.map((value) => (
               <option key={value} value={value}>
                 {value}s
               </option>

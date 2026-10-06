@@ -1,5 +1,16 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import type { BackupFile, Bookmark, Character, Line, Note, Scene, Track, TrackMeta } from './types'
+import type {
+  BackupFile,
+  Bookmark,
+  Character,
+  Dance,
+  DanceVideo,
+  Line,
+  Note,
+  Scene,
+  Track,
+  TrackMeta,
+} from './types'
 
 interface MMSchema extends DBSchema {
   tracks: {
@@ -28,10 +39,27 @@ interface MMSchema extends DBSchema {
     key: string
     value: Character
   }
+  dances: {
+    key: string
+    value: Dance
+  }
+  danceVideos: {
+    key: string
+    value: DanceVideo
+  }
+  danceBookmarks: {
+    key: string
+    value: Bookmark
+    indexes: { byTrack: string }
+  }
+  danceNotes: {
+    key: string
+    value: Note
+  }
 }
 
 const DB_NAME = 'musical-memorization'
-const DB_VERSION = 4
+const DB_VERSION = 5
 
 let dbPromise: Promise<IDBPDatabase<MMSchema>> | null = null
 
@@ -54,6 +82,13 @@ function db() {
         }
         if (oldVersion < 4) {
           database.createObjectStore('characters', { keyPath: 'id' })
+        }
+        if (oldVersion < 5) {
+          database.createObjectStore('dances', { keyPath: 'id' })
+          database.createObjectStore('danceVideos', { keyPath: 'danceId' })
+          const danceBookmarks = database.createObjectStore('danceBookmarks', { keyPath: 'id' })
+          danceBookmarks.createIndex('byTrack', 'trackId')
+          database.createObjectStore('danceNotes', { keyPath: 'trackId' })
         }
       },
     })
@@ -124,6 +159,82 @@ export async function putNote(note: Note): Promise<void> {
 
 export async function deleteNote(trackId: string): Promise<void> {
   await (await db()).delete('notes', trackId)
+}
+
+/** What the shared player needs to load and save one item's bookmarks and note. */
+export interface BookmarkStore {
+  getBookmarks(ownerId: string): Promise<Bookmark[]>
+  putBookmark(bookmark: Bookmark): Promise<void>
+  deleteBookmark(id: string): Promise<void>
+  getNote(ownerId: string): Promise<Note | undefined>
+  putNote(note: Note): Promise<void>
+  deleteNote(ownerId: string): Promise<void>
+}
+
+export const trackBookmarkStore: BookmarkStore = {
+  getBookmarks,
+  putBookmark,
+  deleteBookmark,
+  getNote,
+  putNote,
+  deleteNote,
+}
+
+export const danceBookmarkStore: BookmarkStore = {
+  async getBookmarks(danceId) {
+    const all = await (await db()).getAllFromIndex('danceBookmarks', 'byTrack', danceId)
+    return all.sort((a, b) => a.startSec - b.startSec)
+  },
+  async putBookmark(bookmark) {
+    await (await db()).put('danceBookmarks', bookmark)
+  },
+  async deleteBookmark(id) {
+    await (await db()).delete('danceBookmarks', id)
+  },
+  async getNote(danceId) {
+    return (await db()).get('danceNotes', danceId)
+  },
+  async putNote(note) {
+    await (await db()).put('danceNotes', note)
+  },
+  async deleteNote(danceId) {
+    await (await db()).delete('danceNotes', danceId)
+  },
+}
+
+export async function getDances(): Promise<Dance[]> {
+  const all = await (await db()).getAll('dances')
+  return all.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** Saves a dance's details only; the video is written once, by putDanceVideo. */
+export async function putDance(dance: Dance): Promise<void> {
+  await (await db()).put('dances', dance)
+}
+
+export async function getDanceVideo(danceId: string): Promise<Blob | undefined> {
+  return (await (await db()).get('danceVideos', danceId))?.blob
+}
+
+export async function putDanceVideo(video: DanceVideo): Promise<void> {
+  await (await db()).put('danceVideos', video)
+}
+
+/** Deletes a dance together with its video, bookmarks and note. */
+export async function deleteDance(id: string): Promise<void> {
+  const database = await db()
+  const tx = database.transaction(
+    ['dances', 'danceVideos', 'danceBookmarks', 'danceNotes'],
+    'readwrite',
+  )
+  const keys = await tx.objectStore('danceBookmarks').index('byTrack').getAllKeys(id)
+  await Promise.all([
+    tx.objectStore('dances').delete(id),
+    tx.objectStore('danceVideos').delete(id),
+    tx.objectStore('danceNotes').delete(id),
+    ...keys.map((key) => tx.objectStore('danceBookmarks').delete(key)),
+  ])
+  await tx.done
 }
 
 export async function getScenes(): Promise<Scene[]> {
@@ -210,8 +321,9 @@ export function reorder<T extends { id: string; order: number }>(
 }
 
 /**
- * Exports everything except the audio blobs — bookmarks are the irreplaceable
- * part, the audio files still exist wherever they were imported from.
+ * Exports everything except the audio and video blobs — bookmarks are the
+ * irreplaceable part, the media files still exist wherever they were imported
+ * from.
  */
 export async function exportBackup(): Promise<BackupFile> {
   const database = await db()
@@ -221,9 +333,12 @@ export async function exportBackup(): Promise<BackupFile> {
   const lines = await database.getAll('lines')
   const notes = await database.getAll('notes')
   const characters = await database.getAll('characters')
+  const dances = await database.getAll('dances')
+  const danceBookmarks = await database.getAll('danceBookmarks')
+  const danceNotes = await database.getAll('danceNotes')
   return {
     format: 'musical-memorization',
-    version: 4,
+    version: 5,
     exportedAt: Date.now(),
     tracks: tracks.map(({ blob: _blob, ...meta }) => meta satisfies TrackMeta),
     bookmarks,
@@ -231,6 +346,9 @@ export async function exportBackup(): Promise<BackupFile> {
     lines,
     notes,
     characters,
+    dances,
+    danceBookmarks,
+    danceNotes,
   }
 }
 
@@ -242,6 +360,10 @@ export interface ImportResult {
   notesAdded: number
   charactersAdded: number
   namesUpdated: number
+  danceBookmarksAdded: number
+  danceBookmarksSkipped: number
+  danceNotesAdded: number
+  dancesUpdated: number
 }
 
 /**
@@ -260,8 +382,8 @@ function mergeVoiceId(
 }
 
 /**
- * Merges a backup into the current database. Bookmarks whose track is not
- * present locally are skipped — re-import that audio file first, then import
+ * Merges a backup into the current database. Bookmarks whose track or dance is not
+ * present locally are skipped — re-import that file first, then import
  * again.
  */
 export async function importBackup(
@@ -272,73 +394,23 @@ export async function importBackup(
     throw new Error('Not a Musical Memorization backup file.')
   }
   const database = await db()
-  const localTracks = await database.getAll('tracks')
-
-  // Match by id first, then by the original file name — not the editable
-  // display name, which may have been customized differently on each device
-  // — so a re-imported file adopts its old bookmarks even though the new
-  // import generated a fresh id. Display name is kept as a last-resort
-  // fallback for backups that predate this.
-  const byId = new Map(localTracks.map((t) => [t.id, t.id]))
-  const byFileName = new Map(localTracks.map((t) => [t.fileName.toLowerCase(), t.id]))
-  const byName = new Map(localTracks.map((t) => [t.name.toLowerCase(), t.id]))
-  const remap = new Map<string, string>()
-  for (const track of backup.tracks ?? []) {
-    const local =
-      byId.get(track.id) ??
-      byFileName.get(track.fileName.toLowerCase()) ??
-      byName.get(track.name.toLowerCase())
-    if (local) remap.set(track.id, local)
-  }
-
-  // Carries the backup's display name onto the matched local track, so
-  // renames/reordering done on one device (e.g. alphabetizing) show up on
-  // the other without having to rename each track by hand.
-  const localById = new Map(localTracks.map((t) => [t.id, t]))
-  let namesUpdated = 0
-  const trackTx = database.transaction('tracks', 'readwrite')
-  for (const track of backup.tracks ?? []) {
-    const localId = remap.get(track.id)
-    const local = localId ? localById.get(localId) : undefined
-    if (!local || local.name === track.name) continue
-    await trackTx.store.put({ ...local, name: track.name })
-    namesUpdated += 1
-  }
-  await trackTx.done
-
-  // Bookmarks keep their original id from the backup instead of getting a
-  // fresh one, so re-importing the same backup updates them in place rather
-  // than piling up copies. For each matched track, anything currently stored
-  // locally that isn't in this backup (deleted or renamed on the source
-  // device) is removed too, so the track ends up an exact mirror of the
-  // backup's set rather than a superset.
-  const incomingBookmarksByTrack = new Map<string, Bookmark[]>()
-  let skipped = 0
-  for (const bookmark of backup.bookmarks ?? []) {
-    const trackId = remap.get(bookmark.trackId)
-    if (!trackId) {
-      skipped += 1
-      continue
-    }
-    if (!incomingBookmarksByTrack.has(trackId)) incomingBookmarksByTrack.set(trackId, [])
-    incomingBookmarksByTrack.get(trackId)!.push(bookmark)
-  }
-
-  let added = 0
-  const bookmarkTx = database.transaction('bookmarks', 'readwrite')
-  for (const trackId of new Set(remap.values())) {
-    const incoming = incomingBookmarksByTrack.get(trackId) ?? []
-    const keepIds = new Set(incoming.map((b) => b.id))
-    const existing = await bookmarkTx.store.index('byTrack').getAll(trackId)
-    for (const stale of existing) {
-      if (!keepIds.has(stale.id)) await bookmarkTx.store.delete(stale.id)
-    }
-    for (const bookmark of incoming) {
-      await bookmarkTx.store.put({ ...bookmark, trackId })
-      added += 1
-    }
-  }
-  await bookmarkTx.done
+  const tracks = await mirrorMedia(
+    { media: 'tracks', bookmarks: 'bookmarks', notes: 'notes', syncFields: ['name'] },
+    backup.tracks ?? [],
+    backup.bookmarks ?? [],
+    backup.notes,
+  )
+  const dances = await mirrorMedia(
+    {
+      media: 'dances',
+      bookmarks: 'danceBookmarks',
+      notes: 'danceNotes',
+      syncFields: ['name', 'mirrored'],
+    },
+    backup.dances ?? [],
+    backup.danceBookmarks ?? [],
+    backup.danceNotes,
+  )
 
   // Scenes and lines keep their original ids and are fully mirrored from the
   // backup: anything on this device that isn't in the backup gets removed, so
@@ -384,26 +456,6 @@ export async function importBackup(
     await sceneTx.done
   }
 
-  // A note is keyed by trackId. Only backups that carry the notes field at
-  // all get synced (older exports predate notes and must not wipe existing
-  // ones); for those that do, a matched track's note is overwritten to match
-  // the backup, or removed if the backup no longer has one for that track.
-  let notesAdded = 0
-  if (backup.notes) {
-    const noteByOriginalTrackId = new Map(backup.notes.map((n) => [n.trackId, n]))
-    const noteTx = database.transaction('notes', 'readwrite')
-    for (const [originalTrackId, localTrackId] of remap) {
-      const note = noteByOriginalTrackId.get(originalTrackId)
-      if (note) {
-        await noteTx.store.put({ ...note, trackId: localTrackId })
-        notesAdded += 1
-      } else {
-        await noteTx.store.delete(localTrackId)
-      }
-    }
-    await noteTx.done
-  }
-
   // Characters are mirrored the same way as scenes. Backups that predate
   // characters omit the field and must not wipe the local set.
   let charactersAdded = 0
@@ -425,12 +477,138 @@ export async function importBackup(
   }
 
   return {
-    bookmarksAdded: added,
-    bookmarksSkipped: skipped,
+    bookmarksAdded: tracks.bookmarksAdded,
+    bookmarksSkipped: tracks.bookmarksSkipped,
     scenesAdded,
     linesAdded,
-    notesAdded,
+    notesAdded: tracks.notesAdded,
     charactersAdded,
-    namesUpdated,
+    namesUpdated: tracks.itemsUpdated,
+    danceBookmarksAdded: dances.bookmarksAdded,
+    danceBookmarksSkipped: dances.bookmarksSkipped,
+    danceNotesAdded: dances.notesAdded,
+    dancesUpdated: dances.itemsUpdated,
   }
+}
+
+interface MediaStores {
+  media: 'tracks' | 'dances'
+  bookmarks: 'bookmarks' | 'danceBookmarks'
+  notes: 'notes' | 'danceNotes'
+  /** Fields copied from the backup onto the matched local item. */
+  syncFields: string[]
+}
+
+/**
+ * Merges one kind of media (tracks or dances) with its bookmarks and notes.
+ * Bookmarks whose item is not present locally are skipped — re-import that
+ * file first, then import again.
+ */
+async function mirrorMedia(
+  stores: MediaStores,
+  backupItems: TrackMeta[],
+  backupBookmarks: Bookmark[],
+  backupNotes: Note[] | undefined,
+) {
+  // Tracks and dances share this code, which their per-store types can't
+  // express, so it works against the untyped view of the same database.
+  const database = (await db()) as unknown as IDBPDatabase
+  const localItems: TrackMeta[] = await database.getAll(stores.media)
+
+  // Match by id first, then by the original file name — not the editable
+  // display name, which may have been customized differently on each device
+  // — so a re-imported file adopts its old bookmarks even though the new
+  // import generated a fresh id. Display name is kept as a last-resort
+  // fallback for backups that predate this.
+  const byId = new Map(localItems.map((t) => [t.id, t.id]))
+  const byFileName = new Map(localItems.map((t) => [t.fileName.toLowerCase(), t.id]))
+  const byName = new Map(localItems.map((t) => [t.name.toLowerCase(), t.id]))
+  const remap = new Map<string, string>()
+  for (const item of backupItems) {
+    const local =
+      byId.get(item.id) ??
+      byFileName.get(item.fileName.toLowerCase()) ??
+      byName.get(item.name.toLowerCase())
+    if (local) remap.set(item.id, local)
+  }
+
+  // Carries the backup's display name (and, for dances, the mirror setting)
+  // onto the matched local item, so renames/reordering done on one device
+  // (e.g. alphabetizing) show up on the other without having to rename each
+  // one by hand.
+  const localById = new Map(
+    localItems.map((t) => [t.id, t as unknown as Record<string, unknown>]),
+  )
+  let itemsUpdated = 0
+  const itemTx = database.transaction(stores.media, 'readwrite')
+  for (const item of backupItems as unknown as Record<string, unknown>[]) {
+    const localId = remap.get(item.id as string)
+    const local = localId ? localById.get(localId) : undefined
+    if (!local) continue
+    const changed = stores.syncFields.filter(
+      (field) => item[field] !== undefined && item[field] !== local[field],
+    )
+    if (!changed.length) continue
+    const updated = { ...local }
+    for (const field of changed) updated[field] = item[field]
+    await itemTx.store.put(updated)
+    itemsUpdated += 1
+  }
+  await itemTx.done
+
+  // Bookmarks keep their original id from the backup instead of getting a
+  // fresh one, so re-importing the same backup updates them in place rather
+  // than piling up copies. For each matched item, anything currently stored
+  // locally that isn't in this backup (deleted or renamed on the source
+  // device) is removed too, so the item ends up an exact mirror of the
+  // backup's set rather than a superset.
+  const incomingBookmarksByItem = new Map<string, Bookmark[]>()
+  let bookmarksSkipped = 0
+  for (const bookmark of backupBookmarks) {
+    const itemId = remap.get(bookmark.trackId)
+    if (!itemId) {
+      bookmarksSkipped += 1
+      continue
+    }
+    if (!incomingBookmarksByItem.has(itemId)) incomingBookmarksByItem.set(itemId, [])
+    incomingBookmarksByItem.get(itemId)!.push(bookmark)
+  }
+
+  let bookmarksAdded = 0
+  const bookmarkTx = database.transaction(stores.bookmarks, 'readwrite')
+  for (const itemId of new Set(remap.values())) {
+    const incoming = incomingBookmarksByItem.get(itemId) ?? []
+    const keepIds = new Set(incoming.map((b) => b.id))
+    const existing: Bookmark[] = await bookmarkTx.store.index('byTrack').getAll(itemId)
+    for (const stale of existing) {
+      if (!keepIds.has(stale.id)) await bookmarkTx.store.delete(stale.id)
+    }
+    for (const bookmark of incoming) {
+      await bookmarkTx.store.put({ ...bookmark, trackId: itemId })
+      bookmarksAdded += 1
+    }
+  }
+  await bookmarkTx.done
+
+  // A note is keyed by its item's id. Only backups that carry the notes field
+  // at all get synced (older exports predate notes and must not wipe existing
+  // ones); for those that do, a matched item's note is overwritten to match
+  // the backup, or removed if the backup no longer has one for that item.
+  let notesAdded = 0
+  if (backupNotes) {
+    const noteByOriginalId = new Map(backupNotes.map((n) => [n.trackId, n]))
+    const noteTx = database.transaction(stores.notes, 'readwrite')
+    for (const [originalId, localId] of remap) {
+      const note = noteByOriginalId.get(originalId)
+      if (note) {
+        await noteTx.store.put({ ...note, trackId: localId })
+        notesAdded += 1
+      } else {
+        await noteTx.store.delete(localId)
+      }
+    }
+    await noteTx.done
+  }
+
+  return { bookmarksAdded, bookmarksSkipped, notesAdded, itemsUpdated }
 }

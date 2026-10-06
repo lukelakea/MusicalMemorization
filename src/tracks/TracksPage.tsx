@@ -7,9 +7,10 @@ import {
   getTracks,
   newId,
   putTrack,
+  trackBookmarkStore,
 } from '../lib/db'
 import { formatTime } from '../lib/format'
-import { TrackPlayer } from './TrackPlayer'
+import { MediaPlayer, TRACK_RATES } from '../media/MediaPlayer'
 
 export function TracksPage() {
   const [tracks, setTracks] = useState<Track[]>([])
@@ -108,9 +109,13 @@ export function TracksPage() {
       </aside>
 
       {selected ? (
-        <TrackPlayer
+        <MediaPlayer
           key={selected.id}
-          track={selected}
+          media={selected}
+          blob={selected.blob}
+          kind="audio"
+          store={trackBookmarkStore}
+          rates={TRACK_RATES}
           onRename={(name) => void renameTrack(selected.id, name)}
           onDelete={() => void removeTrack(selected.id)}
         />

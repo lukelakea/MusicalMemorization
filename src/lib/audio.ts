@@ -1,8 +1,8 @@
-/** Reads a file's duration by loading it into a throwaway audio element. */
-export function readDuration(blob: Blob): Promise<number> {
+/** Reads a file's duration by loading it into a throwaway media element. */
+export function readDuration(blob: Blob, kind: 'audio' | 'video' = 'audio'): Promise<number> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(blob)
-    const audio = new Audio()
+    const audio = document.createElement(kind)
     const finish = (value: number) => {
       URL.revokeObjectURL(url)
       resolve(value)
@@ -16,8 +16,8 @@ export function readDuration(blob: Blob): Promise<number> {
 }
 
 /** Keeps pitch stable when the rate changes, across the vendor-prefixed names. */
-export function setRatePreservingPitch(audio: HTMLAudioElement, rate: number): void {
-  const el = audio as HTMLAudioElement & {
+export function setRatePreservingPitch(audio: HTMLMediaElement, rate: number): void {
+  const el = audio as HTMLMediaElement & {
     mozPreservesPitch?: boolean
     webkitPreservesPitch?: boolean
   }
