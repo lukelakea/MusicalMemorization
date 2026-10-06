@@ -23,7 +23,7 @@ interface Props {
 }
 
 export function MyLinesPage({ settings, onSettingsChange }: Props) {
-  const { speed, delaySec, repeat, showContext: showAllContext } = settings
+  const { speed, delaySec, repeat, speakContext, showContext: showAllContext } = settings
   const [entries, setEntries] = useState<Entry[]>([])
   const [characters, setCharacters] = useState<Character[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -72,12 +72,22 @@ export function MyLinesPage({ settings, onSettingsChange }: Props) {
     [entries],
   )
   const skippedCount = entries.length - lines.length
+  // Only other characters' spoken lines make a cue; your own previous line was
+  // just read, and stage directions are never spoken.
+  const cueById = useMemo(() => {
+    const map = new Map<string, Line>()
+    for (const { line, context } of entries) {
+      if (context && context.mode === 'tts') map.set(line.id, context)
+    }
+    return map
+  }, [entries])
   // These are your own lines, so playback always reads them aloud.
   const player = useScenePlayer(lines, {
     characters,
     speed,
     delaySec,
     speakMyLines: true,
+    cueFor: speakContext ? (line) => cueById.get(line.id) ?? null : undefined,
     onFinished: () => {
       if (passRef.current >= repeat || lines.length === 0) return startPass(1)
       startPass(passRef.current + 1)
@@ -190,6 +200,17 @@ export function MyLinesPage({ settings, onSettingsChange }: Props) {
               </option>
             ))}
           </select>
+        </label>
+        <label
+          className="inline-check"
+          title="Say the line before each of yours, in that character's voice, first"
+        >
+          <input
+            type="checkbox"
+            checked={speakContext}
+            onChange={(e) => onSettingsChange({ speakContext: e.target.checked })}
+          />
+          Read context aloud
         </label>
         <label className="inline-check" title="Show the line that comes before each of yours">
           <input

@@ -19,6 +19,8 @@ interface PlayerOptions {
   delaySec: number
   /** Read "My line" entries aloud instead of waiting in silence. */
   speakMyLines: boolean
+  /** A line to speak aloud, in its own voice, just before the given one. */
+  cueFor?: (line: Line) => Line | null
   /** Called when a pass reaches the end of the scene on its own, not on stop or pause. */
   onFinished?: () => void
 }
@@ -85,10 +87,10 @@ export function useScenePlayer(lines: Line[], options: PlayerOptions) {
         if (runner.cancelled) return
         setCurrentLineId(line.id)
 
-        const { characters, speed, speakMyLines } = optionsRef.current
-        if (line.mode === 'tts' || (line.mode === 'mine' && speakMyLines)) {
-          const voice = resolveSpeech(line, characters)
-          const handle = speak(line.text, {
+        const speakLine = async (target: Line) => {
+          const { characters, speed } = optionsRef.current
+          const voice = resolveSpeech(target, characters)
+          const handle = speak(target.text, {
             voiceId: voice.voiceId,
             // The Web Speech API rejects rates outside 0.1-10.
             rate: Math.min(10, Math.max(0.1, voice.rate * speed)),
@@ -96,6 +98,20 @@ export function useScenePlayer(lines: Line[], options: PlayerOptions) {
           })
           runner.abort = handle.cancel
           await handle.done
+        }
+
+        // The cue plays while the line it leads into stays highlighted.
+        const cue = optionsRef.current.cueFor?.(line)
+        if (cue) {
+          await speakLine(cue)
+          if (runner.cancelled) return
+          await sleep(optionsRef.current.delaySec / optionsRef.current.speed, runner)
+          if (runner.cancelled) return
+        }
+
+        const { speed, speakMyLines } = optionsRef.current
+        if (line.mode === 'tts' || (line.mode === 'mine' && speakMyLines)) {
+          await speakLine(line)
         } else if (line.mode === 'mine') {
           // Your own line: silence long enough to say it, scaled the same way
           // so the whole scene slows down together.

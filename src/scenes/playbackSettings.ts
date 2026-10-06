@@ -8,6 +8,8 @@ export interface PlaybackSettings {
   autoAdvance: boolean
   /** My Lines tab: show the cue line above every one of yours. */
   showContext: boolean
+  /** My Lines tab: speak the cue line, in its own voice, before each of yours. */
+  speakContext: boolean
   /** My Lines tab: total passes through the list, 1 meaning no repeat. */
   repeat: number
 }
@@ -19,6 +21,7 @@ export const DEFAULT_PLAYBACK_SETTINGS: PlaybackSettings = {
   cueMode: false,
   autoAdvance: false,
   showContext: false,
+  speakContext: false,
   repeat: 1,
 }
 
@@ -43,6 +46,7 @@ export function loadPlaybackSettings(): PlaybackSettings {
       cueMode: pick('cueMode', (v) => typeof v === 'boolean'),
       autoAdvance: pick('autoAdvance', (v) => typeof v === 'boolean'),
       showContext: pick('showContext', (v) => typeof v === 'boolean'),
+      speakContext: pick('speakContext', (v) => typeof v === 'boolean'),
       repeat: pick('repeat', (v) => REPEAT_OPTIONS.includes(v as number)),
     }
   } catch {
