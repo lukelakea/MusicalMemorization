@@ -8,6 +8,8 @@ interface Props {
   exportedAt: number
   /** Latest edit or deletion on this device; 0 if nothing has an edit time yet. */
   lastLocalEdit: number
+  /** Lines of natural voice audio in the backup that this device doesn't have. */
+  newAudio: number
   onConfirm: () => Promise<void>
   onCancel: () => void
 }
@@ -22,12 +24,13 @@ export function ImportReview({
   backupVersion,
   exportedAt,
   lastLocalEdit,
+  newAudio,
   onConfirm,
   onCancel,
 }: Props) {
   const [busy, setBusy] = useState(false)
   const { summary } = plan
-  const empty = isEmptyPlan(plan)
+  const empty = isEmptyPlan(plan) && newAudio === 0
   const groups: [string, string[]][] = [
     ['Added', summary.added],
     ['Updated from the backup', summary.replaced],
@@ -83,6 +86,12 @@ export function ImportReview({
               ) : null,
             )}
           </div>
+        )}
+        {newAudio > 0 && (
+          <p>
+            Natural voice audio for {newAudio} line{newAudio === 1 ? '' : 's'}, ready to play
+            without preparing.
+          </p>
         )}
         {summary.skipped > 0 && (
           <p className="muted">

@@ -13,10 +13,10 @@ import type {
 import { isNaturalVoice } from './naturalVoices'
 
 /** Everything a backup carries, read from this device's database. */
-export type LocalData = Required<Omit<BackupFile, 'format' | 'version' | 'exportedAt'>>
+export type LocalData = Required<Omit<BackupFile, 'format' | 'version' | 'exportedAt' | 'lineAudio'>>
 
 /** The newest backup format this code understands. */
-export const BACKUP_VERSION = 6
+export const BACKUP_VERSION = 7
 
 export function deletionKey(store: DeletableStore, id: string): string {
   return `${store}:${id}`

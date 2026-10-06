@@ -11,7 +11,12 @@ import {
 } from './lib/db'
 import { BACKUP_VERSION, lastLocalEdit, planMerge, type LocalData, type MergePlan } from './lib/merge'
 import { loadVoices } from './lib/speech'
-import { NATURAL_VOICES } from './lib/natural'
+import {
+  NATURAL_VOICES,
+  backupLineAudio,
+  countNewLineAudio,
+  restoreLineAudio,
+} from './lib/natural'
 import type { BackupFile } from './lib/types'
 import { CharactersPage } from './characters/CharactersPage'
 import { DancePage } from './dance/DancePage'
@@ -34,6 +39,8 @@ interface PendingImport {
   /** This device's data the plan was made from; saved as the undo snapshot. */
   local: LocalData
   plan: MergePlan
+  /** Lines of natural voice audio in the backup that this device doesn't have. */
+  newAudio: number
 }
 
 export function App() {
@@ -72,7 +79,16 @@ export function App() {
   }, [])
 
   async function doExport() {
+    setStatus('Preparing backup…')
     const backup = await exportBackup()
+    // Saved natural voice audio goes along, so the other device can play it
+    // without making it again.
+    backup.lineAudio = await backupLineAudio(backup.lines ?? [], backup.characters ?? [])
+    setStatus(
+      backup.lineAudio.length > 0
+        ? `Backup includes natural voice audio for ${backup.lineAudio.length} line${backup.lineAudio.length === 1 ? '' : 's'}.`
+        : null,
+    )
     const url = URL.createObjectURL(
       new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }),
     )
@@ -123,6 +139,7 @@ export function App() {
         backup,
         local,
         plan: planMerge(local, backup, knownVoiceIds),
+        newAudio: await countNewLineAudio(backup.lineAudio ?? []),
       })
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Import failed.')
@@ -135,10 +152,12 @@ export function App() {
     if (!review) return
     try {
       await applyMerge(review.plan, review.local, review.fileName)
+      const audioAdded = await restoreLineAudio(review.backup.lineAudio ?? [])
       const { summary } = review.plan
       setStatus(
         `Imported ${review.fileName}: ${summary.added.length} added, ${summary.replaced.length} updated, ` +
-          `${summary.removed.length} removed, ${summary.keptLocal.length} kept as they were here.`,
+          `${summary.removed.length} removed, ${summary.keptLocal.length} kept as they were here.` +
+          (audioAdded > 0 ? ` Natural voice audio added for ${audioAdded} line${audioAdded === 1 ? '' : 's'}.` : ''),
       )
       setSnapshot(await getImportSnapshot())
       // Remount the pages so none of them keeps showing — and later saves —
@@ -235,6 +254,7 @@ export function App() {
           backupVersion={review.backup.version}
           exportedAt={review.backup.exportedAt}
           lastLocalEdit={lastLocalEdit(review.local)}
+          newAudio={review.newAudio}
           onConfirm={confirmImport}
           onCancel={() => setReview(null)}
         />

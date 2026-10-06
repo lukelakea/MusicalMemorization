@@ -79,7 +79,9 @@ Two kinds, both picked per character or per line:
   rehearsal. A line that isn't ready yet is read by the system voice and made in
   the background for next time. Editing a line's text remakes only that line.
   Natural voices sound the same everywhere, so a character's natural voice
-  carries over in a backup (the saved audio itself doesn't, yet).
+  carries over in a backup, and so does the saved audio: prepare scenes on a
+  fast computer, export, and the phone plays them without preparing anything.
+  The audio is stored compressed (Opus), roughly 3 KB per second of speech.
 - **This device's voices** come from the browser's own speech synthesis. On
   Windows, Chrome or Edge give a good set; on Android, Chrome plays the phone's
   one default voice whichever is picked.

@@ -1,9 +1,10 @@
 import type { WorkerRequest, WorkerResponse } from './kokoroWorker'
 import type { SpeakOptions, SpeechHandle } from './speech'
 import { speak } from './speech'
-import type { Character, Line } from './types'
+import type { BackupLineAudio, Character, Line } from './types'
 import { resolveSpeech } from './characters'
 import { NATURAL_PREFIX, audioKey, isNaturalVoice } from './naturalVoices'
+import { compactAudio, encodeOggOpus } from './opus'
 import { getLineAudio, getLineAudioKeys, deleteLineAudio, putLineAudio } from './db'
 
 export * from './naturalVoices'
@@ -164,7 +165,10 @@ async function generate(job: Job): Promise<Blob> {
   if (message.type !== 'generated') {
     throw new Error(message.type === 'error' ? message.message : 'Generation failed.')
   }
-  const blob = toWav(message.audio, message.sampleRate)
+  // Opus keeps the device's storage, and backups, about 15x smaller.
+  const blob =
+    (await encodeOggOpus(message.audio, message.sampleRate)) ??
+    toWav(message.audio, message.sampleRate)
   await putLineAudio({
     key: job.key,
     blob,
@@ -329,4 +333,71 @@ export function speakAny(
       inner?.cancel()
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// Backups
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  }
+  return btoa(binary)
+}
+
+function fromBase64(base64: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+/**
+ * The saved audio these lines use, for a backup. Audio saved as WAV (before
+ * Opus was used) is compressed on the way, and kept compressed here too.
+ */
+export async function backupLineAudio(
+  lines: Line[],
+  characters: Character[],
+): Promise<BackupLineAudio[]> {
+  const keys = new Set(naturalAudioFor(lines, characters).map((item) => item.key))
+  const entries: BackupLineAudio[] = []
+  for (const key of keys) {
+    const saved = await getLineAudio(key)
+    if (!saved) continue
+    const blob = await compactAudio(saved.blob)
+    if (blob !== saved.blob) await putLineAudio({ ...saved, blob })
+    entries.push({
+      key,
+      mimeType: blob.type,
+      durationSec: saved.durationSec,
+      base64: toBase64(new Uint8Array(await blob.arrayBuffer())),
+    })
+  }
+  return entries
+}
+
+/** Saves a backup's audio that this device doesn't have yet; returns how many lines it added. */
+export async function restoreLineAudio(entries: BackupLineAudio[]): Promise<number> {
+  const existing = new Set(await getLineAudioKeys())
+  let added = 0
+  for (const entry of entries) {
+    if (existing.has(entry.key)) continue
+    await putLineAudio({
+      key: entry.key,
+      blob: new Blob([fromBase64(entry.base64)], { type: entry.mimeType }),
+      durationSec: entry.durationSec,
+      createdAt: Date.now(),
+    })
+    added += 1
+  }
+  if (added > 0) notify()
+  return added
+}
+
+/** How many of a backup's audio entries this device doesn't have yet. */
+export async function countNewLineAudio(entries: BackupLineAudio[]): Promise<number> {
+  const existing = new Set(await getLineAudioKeys())
+  return entries.filter((entry) => !existing.has(entry.key)).length
 }
