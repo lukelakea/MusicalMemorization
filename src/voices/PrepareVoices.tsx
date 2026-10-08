@@ -24,7 +24,9 @@ interface Props {
  */
 export function PrepareVoices({ sceneTitle, lines, characters }: Props) {
   const lineItems = useMemo(() => naturalAudioFor(lines, characters), [lines, characters])
-  // The scene's name is prepared with it, for Auto-play to announce it.
+  // The scene's name is prepared along with it, for Auto-play to announce.
+  // It's optional: without it the announcement is just left out, so it
+  // doesn't count towards the scene being ready.
   const items = useMemo(
     () => (sceneTitle.trim() ? [...lineItems, announcementItem(sceneTitle)] : lineItems),
     [lineItems, sceneTitle],
@@ -42,7 +44,6 @@ export function PrepareVoices({ sceneTitle, lines, characters }: Props) {
     [lines, characters],
   )
   const [readyLines, setReadyLines] = useState(0)
-  const [readyAll, setReadyAll] = useState(false)
   const [working, setWorking] = useState(0)
 
   useEffect(() => {
@@ -51,7 +52,6 @@ export function PrepareVoices({ sceneTitle, lines, characters }: Props) {
       void savedKeys(keys).then((saved) => {
         if (!current) return
         setReadyLines(lineKeys.filter((key) => saved.has(key)).length)
-        setReadyAll(saved.size >= keys.length)
       })
       const pending = pendingKeys()
       setWorking(keys.filter((key) => pending.has(key)).length)
@@ -65,6 +65,7 @@ export function PrepareVoices({ sceneTitle, lines, characters }: Props) {
   }, [keys, lineKeys])
 
   if (lineKeys.length === 0) return null
+  const readyAll = readyLines >= lineKeys.length
 
   return (
     <div className="prepare-voices">
