@@ -1,9 +1,15 @@
 import type { WorkerRequest, WorkerResponse } from './kokoroWorker'
 import type { SpeakOptions, SpeechHandle } from './speech'
 import { speak } from './speech'
-import type { BackupLineAudio, Character, Line } from './types'
+import type { BackupLineAudio, Character, Line, Scene } from './types'
 import { resolveSpeech } from './characters'
-import { NATURAL_PREFIX, audioKey, isNaturalVoice } from './naturalVoices'
+import {
+  ANNOUNCER_VOICE,
+  NATURAL_PREFIX,
+  audioKey,
+  isNaturalVoice,
+  naturalRate,
+} from './naturalVoices'
 import { compactAudio, encodeOggOpus } from './opus'
 import { getLineAudio, getLineAudioKeys, deleteLineAudio, putLineAudio } from './db'
 
@@ -22,18 +28,44 @@ export * from './naturalVoices'
  * needs. Silent notes are never spoken; your own lines are included because
  * "Read my lines" and the My Lines tab read them aloud.
  */
-export function naturalAudioFor(
-  lines: Line[],
-  characters: Character[],
-): Array<{ lineId: string; voiceId: string; text: string; key: string }> {
+export function naturalAudioFor(lines: Line[], characters: Character[]): NaturalItem[] {
   const items = []
   for (const line of lines) {
     if (line.mode === 'silent' || !line.text.trim()) continue
-    const { voiceId } = resolveSpeech(line, characters)
-    if (!isNaturalVoice(voiceId)) continue
-    items.push({ lineId: line.id, voiceId, text: line.text, key: audioKey(voiceId, line.text) })
+    const item = naturalItem(line, characters)
+    if (item) items.push(item)
   }
   return items
+}
+
+/** A piece of natural voice audio: what's said, in which voice, at what rate. */
+export interface NaturalItem {
+  voiceId: string
+  text: string
+  /** The line's and character's rate, made into the audio. */
+  rate: number
+  key: string
+}
+
+/** The natural voice audio a line is spoken with, or null if its voice isn't natural. */
+export function naturalItem(line: Line, characters: Character[]): NaturalItem | null {
+  const { voiceId, rate } = resolveSpeech(line, characters)
+  if (!isNaturalVoice(voiceId)) return null
+  const r = naturalRate(rate)
+  return { voiceId, text: line.text, rate: r, key: audioKey(voiceId, line.text, r) }
+}
+
+/** A scene's name, as Auto-play announces it. */
+export function announcementItem(title: string): NaturalItem {
+  return { voiceId: ANNOUNCER_VOICE, text: title, rate: 1, key: audioKey(ANNOUNCER_VOICE, title) }
+}
+
+/** Every piece of audio these scenes and lines play: the lines, and each scene's name. */
+export function audioInUse(scenes: Scene[], lines: Line[], characters: Character[]): NaturalItem[] {
+  return [
+    ...naturalAudioFor(lines, characters),
+    ...scenes.filter((scene) => scene.title.trim()).map((scene) => announcementItem(scene.title)),
+  ]
 }
 
 // ---------------------------------------------------------------------------
@@ -46,10 +78,7 @@ export interface ModelStatus {
   error?: string
 }
 
-interface Job {
-  key: string
-  voiceId: string
-  text: string
+interface Job extends NaturalItem {
   waiters: Array<{ resolve: (blob: Blob) => void; reject: (error: Error) => void }>
 }
 
@@ -158,7 +187,7 @@ async function generate(job: Job): Promise<Blob> {
       id,
       text: job.text,
       voice: job.voiceId.slice(NATURAL_PREFIX.length),
-      speed: 1,
+      speed: job.rate,
     }
     worker!.postMessage(request)
   })
@@ -205,8 +234,12 @@ async function pump() {
  * The saved audio for a line, making it first if needed. `urgent` puts it
  * ahead of background preparation, for a line someone is waiting to hear.
  */
-export async function requestAudio(voiceId: string, text: string, urgent = false): Promise<Blob> {
-  const key = audioKey(voiceId, text)
+export async function requestAudio(
+  item: Omit<NaturalItem, 'key'>,
+  urgent = false,
+): Promise<Blob> {
+  const rate = naturalRate(item.rate)
+  const key = audioKey(item.voiceId, item.text, rate)
   const saved = await getLineAudio(key)
   if (saved) return saved.blob
   return new Promise<Blob>((resolve, reject) => {
@@ -216,7 +249,8 @@ export async function requestAudio(voiceId: string, text: string, urgent = false
       return
     }
     const index = queue.findIndex((job) => job.key === key)
-    const job = index >= 0 ? queue.splice(index, 1)[0] : { key, voiceId, text, waiters: [] }
+    const job: Job =
+      index >= 0 ? queue.splice(index, 1)[0] : { ...item, rate, key, waiters: [] }
     job.waiters.push(waiter)
     if (urgent) queue.unshift(job)
     else queue.push(job)
@@ -226,15 +260,14 @@ export async function requestAudio(voiceId: string, text: string, urgent = false
 }
 
 /** Queues lines to be made in the background, skipping any already saved or queued. */
-export async function prepare(items: Array<{ voiceId: string; text: string }>): Promise<void> {
+export async function prepare(items: NaturalItem[]): Promise<void> {
   const saved = new Set(await getLineAudioKeys())
   const queued = pendingKeys()
   for (const item of items) {
-    const key = audioKey(item.voiceId, item.text)
-    if (saved.has(key) || queued.has(key) || !item.text.trim()) continue
-    queued.add(key)
+    if (saved.has(item.key) || queued.has(item.key) || !item.text.trim()) continue
+    queued.add(item.key)
     // A background failure is reported through the model status, not here.
-    requestAudio(item.voiceId, item.text).catch(() => {})
+    requestAudio(item).catch(() => {})
   }
 }
 
@@ -264,18 +297,33 @@ export async function pruneAudio(inUse: Set<string>): Promise<void> {
 // ---------------------------------------------------------------------------
 // Playback
 
-/** One element for every line, so a new line always replaces the last one. */
+/**
+ * One element for everything played, line clips and whole-scene tracks
+ * alike, so a new sound always replaces the last one and the phone's media
+ * controls stay attached to the same player.
+ */
 let player: HTMLAudioElement | null = null
+
+export function mediaElement(): HTMLAudioElement {
+  if (!player) {
+    player = new Audio()
+    player.preservesPitch = true
+  }
+  return player
+}
+
+/** Browsers accept 0.0625-16; beyond 4x speech is useless anyway. */
+export function clampPlaybackRate(rate: number): number {
+  return Math.min(4, Math.max(0.25, rate))
+}
 
 /** Plays saved audio; `rate` speeds it up without raising the pitch. */
 export function playBlob(blob: Blob, rate: number): SpeechHandle {
-  player?.pause()
-  const audio = player ?? (player = new Audio())
+  const audio = mediaElement()
+  audio.pause()
   const url = URL.createObjectURL(blob)
   audio.src = url
-  audio.preservesPitch = true
-  // Browsers accept 0.0625-16; beyond 4x speech is useless anyway.
-  audio.playbackRate = Math.min(4, Math.max(0.25, rate))
+  audio.playbackRate = clampPlaybackRate(rate)
   let finish = () => {}
   const done = new Promise<void>((resolve) => {
     finish = () => {
@@ -303,26 +351,37 @@ export function playBlob(blob: Blob, rate: number): SpeechHandle {
  * audio. If the audio isn't ready, `wait` makes it now (for a test button);
  * otherwise the system voice stands in so a scene never stalls, and the line
  * is queued so it's ready next time.
+ *
+ * `options.rate` is the voice's own rate (line and character); a natural
+ * voice has it made into the audio. `playbackRate` (the scene's speed)
+ * applies on top.
  */
 export function speakAny(
   text: string,
   options: SpeakOptions,
-  { wait = false }: { wait?: boolean } = {},
+  { wait = false, playbackRate = 1 }: { wait?: boolean; playbackRate?: number } = {},
 ): SpeechHandle {
-  if (!isNaturalVoice(options.voiceId) || !text.trim()) return speak(text, options)
-  const voiceId = options.voiceId
+  if (!isNaturalVoice(options.voiceId) || !text.trim()) {
+    // The Web Speech API rejects rates outside 0.1-10.
+    return speak(text, { ...options, rate: Math.min(10, Math.max(0.1, options.rate * playbackRate)) })
+  }
+  const item = { voiceId: options.voiceId, text, rate: options.rate }
   let cancelled = false
   let inner: SpeechHandle | null = null
   const done = (async () => {
-    const saved = await getLineAudio(audioKey(voiceId, text))
+    const saved = await getLineAudio(audioKey(item.voiceId, text, item.rate))
     let blob = saved?.blob
-    if (!blob && wait) blob = await requestAudio(voiceId, text, true).catch(() => undefined)
+    if (!blob && wait) blob = await requestAudio(item, true).catch(() => undefined)
     if (cancelled) return
     if (blob) {
-      inner = playBlob(blob, options.rate)
+      inner = playBlob(blob, playbackRate)
     } else {
-      void requestAudio(voiceId, text, true).catch(() => {})
-      inner = speak(text, { ...options, voiceId: null })
+      void requestAudio(item, true).catch(() => {})
+      inner = speak(text, {
+        ...options,
+        voiceId: null,
+        rate: Math.min(10, Math.max(0.1, options.rate * playbackRate)),
+      })
     }
     await inner.done
   })()
@@ -354,14 +413,16 @@ function fromBase64(base64: string): Uint8Array<ArrayBuffer> {
 }
 
 /**
- * The saved audio these lines use, for a backup. Audio saved as WAV (before
- * Opus was used) is compressed on the way, and kept compressed here too.
+ * The saved audio these scenes and lines use, for a backup. Audio saved as
+ * WAV (before Opus was used) is compressed on the way, and kept compressed
+ * here too.
  */
 export async function backupLineAudio(
+  scenes: Scene[],
   lines: Line[],
   characters: Character[],
 ): Promise<BackupLineAudio[]> {
-  const keys = new Set(naturalAudioFor(lines, characters).map((item) => item.key))
+  const keys = new Set(audioInUse(scenes, lines, characters).map((item) => item.key))
   const entries: BackupLineAudio[] = []
   for (const key of keys) {
     const saved = await getLineAudio(key)

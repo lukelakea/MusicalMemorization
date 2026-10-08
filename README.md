@@ -77,7 +77,16 @@ Two kinds, both picked per character or per line:
   **Speed** speeds up the saved audio without changing its pitch, so it never
   needs remaking. **Prepare voices** on a scene makes every line ahead of
   rehearsal. A line that isn't ready yet is read by the system voice and made in
-  the background for next time. Editing a line's text remakes only that line.
+  the background for next time. Editing a line's text or rate (or its
+  character's rate) remakes only that line.
+- **Screen off:** once every spoken line in a scene has a prepared natural voice
+  (the scene says "Plays with the screen off too"), the scene plays as one
+  continuous recording, like a music app: it keeps going with the phone locked,
+  and the lock screen has play/pause and next/previous line. Edits made while
+  it plays apply the next time you press Play; speed changes apply at once. A
+  scene with system-voice or unprepared lines plays line by line and needs the
+  screen on. Prepare voices also prepares the scene's name, which Auto-play
+  next scene announces.
   Natural voices sound the same everywhere, so a character's natural voice
   carries over in a backup, and so does the saved audio: prepare scenes on a
   fast computer, export, and the phone plays them without preparing anything.

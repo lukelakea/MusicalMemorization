@@ -83,7 +83,11 @@ export function App() {
     const backup = await exportBackup()
     // Saved natural voice audio goes along, so the other device can play it
     // without making it again.
-    backup.lineAudio = await backupLineAudio(backup.lines ?? [], backup.characters ?? [])
+    backup.lineAudio = await backupLineAudio(
+      backup.scenes ?? [],
+      backup.lines ?? [],
+      backup.characters ?? [],
+    )
     setStatus(
       backup.lineAudio.length > 0
         ? `Backup includes natural voice audio for ${backup.lineAudio.length} line${backup.lineAudio.length === 1 ? '' : 's'}.`

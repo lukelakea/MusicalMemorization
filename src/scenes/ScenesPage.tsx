@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Character, Scene } from '../lib/types'
 import type { VoiceOption } from '../lib/speech'
 import { loadVoices } from '../lib/speech'
-import { naturalAudioFor, pruneAudio } from '../lib/natural'
+import { audioInUse, pruneAudio } from '../lib/natural'
 import {
   deleteScene,
   getAllLines,
@@ -34,24 +34,26 @@ export function ScenesPage({ settings, onSettingsChange }: Props) {
   const [autoPlayId, setAutoPlayId] = useState<string | null>(null)
 
   useEffect(() => {
-    getScenes().then((loaded) => {
-      setScenes(loaded)
-      setSelectedId((current) => current ?? loaded[0]?.id ?? null)
-    })
     loadVoices().then(setVoices)
-    void Promise.all([getAllLines(), getCharacters()]).then(([allLines, loadedCharacters]) => {
-      setCharacters(loadedCharacters)
-      // Saved natural voice audio no line uses any more (old wording, a
-      // changed voice) is cleared out so it doesn't pile up.
-      void pruneAudio(new Set(naturalAudioFor(allLines, loadedCharacters).map((item) => item.key)))
+    void Promise.all([getScenes(), getAllLines(), getCharacters()]).then(
+      ([loaded, allLines, loadedCharacters]) => {
+        setScenes(loaded)
+        setSelectedId((current) => current ?? loaded[0]?.id ?? null)
+        setCharacters(loadedCharacters)
+        // Saved natural voice audio nothing uses any more (old wording, a
+        // changed voice) is cleared out so it doesn't pile up.
+        void pruneAudio(
+          new Set(audioInUse(loaded, allLines, loadedCharacters).map((item) => item.key)),
+        )
 
-      const counts: Record<string, number> = {}
-      for (const line of allLines) {
-        if (line.mode !== 'mine') continue
-        counts[line.sceneId] = (counts[line.sceneId] ?? 0) + 1
-      }
-      setMyLineCounts(counts)
-    })
+        const counts: Record<string, number> = {}
+        for (const line of allLines) {
+          if (line.mode !== 'mine') continue
+          counts[line.sceneId] = (counts[line.sceneId] ?? 0) + 1
+        }
+        setMyLineCounts(counts)
+      },
+    )
   }, [])
 
   // Picking a scene by hand must never trigger a leftover auto-start.

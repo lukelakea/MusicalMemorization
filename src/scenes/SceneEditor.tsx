@@ -67,7 +67,14 @@ export function SceneEditor({
   const [pasting, setPasting] = useState(false)
   const [pasteText, setPasteText] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const player = useScenePlayer(lines, { characters, speed, delaySec, speakMyLines, onFinished })
+  const player = useScenePlayer(lines, {
+    characters,
+    speed,
+    delaySec,
+    speakMyLines,
+    onFinished,
+    title: scene.title,
+  })
   const currentRef = useRef<HTMLLIElement>(null)
   const autoStarted = useRef(false)
 
@@ -278,7 +285,7 @@ export function SceneEditor({
         </label>
       </div>
 
-      <PrepareVoices lines={lines} characters={characters} />
+      <PrepareVoices sceneTitle={scene.title} lines={lines} characters={characters} />
 
       {!speechSupported && (
         <p className="empty">

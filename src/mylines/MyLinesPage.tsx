@@ -87,6 +87,7 @@ export function MyLinesPage({ settings, onSettingsChange }: Props) {
     speed,
     delaySec,
     speakMyLines: true,
+    title: 'My Lines',
     cueFor: speakContext ? (line) => cueById.get(line.id) ?? null : undefined,
     onFinished: () => {
       if (passRef.current >= repeat || lines.length === 0) return startPass(1)

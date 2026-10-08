@@ -40,7 +40,21 @@ export function naturalVoiceLabel(voiceId: string): string {
   return voice ? `${voice.label} (${voice.who})` : voiceId.slice(NATURAL_PREFIX.length)
 }
 
-/** Text is normalized so whitespace-only edits don't throw away saved audio. */
-export function audioKey(voiceId: string, text: string): string {
-  return `${voiceId}|${text.replace(/\s+/g, ' ').trim()}`
+/**
+ * Text is normalized so whitespace-only edits don't throw away saved audio.
+ * A line or character rate other than 1 is made into the audio itself (the
+ * scene's speed is applied on playback), so it's part of the key.
+ */
+export function audioKey(voiceId: string, text: string, rate = 1): string {
+  const r = naturalRate(rate)
+  const voice = r === 1 ? voiceId : `${voiceId}@${r}`
+  return `${voice}|${text.replace(/\s+/g, ' ').trim()}`
 }
+
+/** Kokoro's usable speaking-rate range, rounded so float noise can't split keys. */
+export function naturalRate(rate: number): number {
+  return Math.round(Math.min(2, Math.max(0.5, rate)) * 100) / 100
+}
+
+/** The voice that names a scene when Auto-play moves on to it. */
+export const ANNOUNCER_VOICE = NATURAL_PREFIX + 'af_heart'

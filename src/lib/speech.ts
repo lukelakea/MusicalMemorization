@@ -196,13 +196,24 @@ export function speak(text: string, options: SpeakOptions): SpeechHandle {
       for (const piece of chunk(text)) {
         if (cancelled) return
         await new Promise<void>((resolve) => {
+          // Some browsers never report the end of speech (Android with the
+          // screen off, for one); give up well after it should have finished
+          // so the scene can't hang.
+          const guard = window.setTimeout(
+            resolve,
+            ((estimateSeconds(piece) * 2) / options.rate + 5) * 1000,
+          )
+          const finish = () => {
+            window.clearTimeout(guard)
+            resolve()
+          }
           const utterance = new SpeechSynthesisUtterance(piece)
           if (voice) utterance.voice = voice
           utterance.rate = options.rate
           utterance.pitch = options.pitch
-          utterance.onend = () => resolve()
+          utterance.onend = finish
           // A failed piece should not strand the scene; move on to the next.
-          utterance.onerror = () => resolve()
+          utterance.onerror = finish
           synth.speak(utterance)
         })
       }
