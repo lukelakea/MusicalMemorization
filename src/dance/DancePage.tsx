@@ -13,6 +13,14 @@ import {
 import { formatSize, formatTime } from '../lib/format'
 import { DANCE_RATES, MediaPlayer } from '../media/MediaPlayer'
 
+const VIDEO_EXTENSION = /\.(mp4|mov|m4v|webm|mkv|3gp|avi)$/i
+
+// Drive and some file managers hand over files with no MIME type, so the
+// extension is the fallback.
+function isVideoFile(file: File): boolean {
+  return file.type.startsWith('video/') || VIDEO_EXTENSION.test(file.name)
+}
+
 export function DancePage() {
   const [dances, setDances] = useState<Dance[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -50,6 +58,10 @@ export function DancePage() {
     try {
       let lastId: string | null = null
       for (const file of Array.from(files)) {
+        if (!isVideoFile(file)) {
+          setError(`"${file.name}" doesn't look like a video, so it was skipped.`)
+          continue
+        }
         const durationSec = await readDuration(file, 'video')
         const dance: Dance = {
           id: newId(),
@@ -107,7 +119,9 @@ export function DancePage() {
           <input
             ref={fileInput}
             type="file"
-            accept="video/*,.mp4,.mov,.m4v,.webm"
+            // No `video/*` here: Android Chrome answers that with the Photos
+            // picker, which can't see files downloaded from Drive or Files.
+            // Without a filter it opens the full file browser instead.
             multiple
             hidden
             onChange={(e) => void importFiles(e.target.files)}
