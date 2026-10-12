@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Dance } from '../lib/types'
-import { readDuration } from '../lib/audio'
+import { probeDuration } from '../lib/audio'
 import {
   danceBookmarkStore,
   deleteDance,
@@ -12,14 +12,6 @@ import {
 } from '../lib/db'
 import { formatSize, formatTime } from '../lib/format'
 import { DANCE_RATES, MediaPlayer } from '../media/MediaPlayer'
-
-const VIDEO_EXTENSION = /\.(mp4|mov|m4v|webm|mkv|3gp|avi)$/i
-
-// Drive and some file managers hand over files with no MIME type, so the
-// extension is the fallback.
-function isVideoFile(file: File): boolean {
-  return file.type.startsWith('video/') || VIDEO_EXTENSION.test(file.name)
-}
 
 export function DancePage() {
   const [dances, setDances] = useState<Dance[]>([])
@@ -58,16 +50,25 @@ export function DancePage() {
     try {
       let lastId: string | null = null
       for (const file of Array.from(files)) {
-        if (!isVideoFile(file)) {
-          setError(`"${file.name}" doesn't look like a video, so it was skipped.`)
+        // Drive and some file managers hand over videos with no extension or a
+        // generic type, so the name can't be trusted: the browser loading the
+        // file as video is the real test. A generic type may itself be what
+        // stops it loading, so that case gets one more try tagged as mp4.
+        let blob: Blob = file
+        let durationSec = await probeDuration(blob, 'video')
+        if (durationSec === null && !file.type.startsWith('video/')) {
+          blob = new Blob([file], { type: 'video/mp4' })
+          durationSec = await probeDuration(blob, 'video')
+        }
+        if (durationSec === null) {
+          setError(`"${file.name}" couldn't be opened as a video, so it was skipped.`)
           continue
         }
-        const durationSec = await readDuration(file, 'video')
         const dance: Dance = {
           id: newId(),
           name: file.name.replace(/\.[^.]+$/, ''),
           fileName: file.name,
-          mimeType: file.type || 'video/mp4',
+          mimeType: blob.type || 'video/mp4',
           durationSec,
           sizeBytes: file.size,
           mirrored: false,
@@ -75,7 +76,7 @@ export function DancePage() {
         }
         // The video first, so a failure part-way never leaves a dance listed
         // with nothing to play.
-        await putDanceVideo({ danceId: dance.id, blob: file })
+        await putDanceVideo({ danceId: dance.id, blob })
         await putDance(dance)
         lastId = dance.id
       }
