@@ -59,8 +59,9 @@ export interface BackupFile {
    * 4 predates dances.
    * 5 predates edit times and deletion records, so it can only add and update.
    * 6 predates natural voice audio.
+   * 7 predates the running order.
    */
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
   exportedAt: number
   tracks: TrackMeta[]
   bookmarks: Bookmark[]
@@ -68,6 +69,7 @@ export interface BackupFile {
   lines?: Line[]
   notes?: Note[]
   characters?: Character[]
+  showNumbers?: ShowNumber[]
   dances?: Dance[]
   danceBookmarks?: Bookmark[]
   danceNotes?: Note[]
@@ -89,6 +91,7 @@ export type DeletableStore =
   | 'scenes'
   | 'lines'
   | 'characters'
+  | 'showNumbers'
   | 'bookmarks'
   | 'notes'
   | 'danceBookmarks'
@@ -198,6 +201,28 @@ export interface Line {
   enabled: boolean
   /** Left out of the My Lines tab's playback only; scene playback ignores it. */
   skipInMyLines?: boolean
+  /**
+   * Last edit on the device that made it, used to pick the newer side when a
+   * backup is merged. Missing on records saved before edits were tracked.
+   */
+  updatedAt?: number
+}
+
+/** One entry in the show's running order (a song, a scene change, an exit). */
+export interface ShowNumber {
+  id: string
+  /** The number as printed in the score, such as "3a". */
+  label: string
+  title: string
+  act: 1 | 2
+  /** Page in the score, when known. */
+  page: number | null
+  order: number
+  /** The character you play in this number; empty when you aren't in it. */
+  role: string
+  /** Costume change to make right after this number, e.g. "Into cop jacket". */
+  changeAfter: string
+  createdAt: number
   /**
    * Last edit on the device that made it, used to pick the newer side when a
    * backup is merged. Missing on records saved before edits were tracked.

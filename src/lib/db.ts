@@ -12,6 +12,7 @@ import type {
   LineAudio,
   Note,
   Scene,
+  ShowNumber,
   Track,
   TrackMeta,
 } from './types'
@@ -72,6 +73,10 @@ interface MMSchema extends DBSchema {
     key: string
     value: LineAudio
   }
+  showNumbers: {
+    key: string
+    value: ShowNumber
+  }
 }
 
 /** This device's data as it was just before the last import, so the import can be undone. */
@@ -86,7 +91,7 @@ export interface ImportSnapshot {
 const SNAPSHOT_ID = 'before-import'
 
 const DB_NAME = 'musical-memorization'
-const DB_VERSION = 7
+const DB_VERSION = 8
 
 let dbPromise: Promise<IDBPDatabase<MMSchema>> | null = null
 
@@ -126,6 +131,9 @@ function db() {
         if (oldVersion < 7) {
           database.createObjectStore('lineAudio', { keyPath: 'key' })
         }
+        if (oldVersion < 8) {
+          database.createObjectStore('showNumbers', { keyPath: 'id' })
+        }
       },
     })
   }
@@ -142,6 +150,7 @@ type StampedStore =
   | 'scenes'
   | 'lines'
   | 'characters'
+  | 'showNumbers'
   | 'bookmarks'
   | 'notes'
   | 'danceBookmarks'
@@ -403,6 +412,19 @@ export async function deleteCharacter(id: string): Promise<void> {
   await deleteRecorded('characters', id)
 }
 
+export async function getShowNumbers(): Promise<ShowNumber[]> {
+  const all = await (await db()).getAll('showNumbers')
+  return all.sort((a, b) => a.order - b.order)
+}
+
+export async function putShowNumbers(numbers: ShowNumber[]): Promise<void> {
+  await putStamped('showNumbers', numbers)
+}
+
+export async function deleteShowNumber(id: string): Promise<void> {
+  await deleteRecorded('showNumbers', id)
+}
+
 export async function getLineAudio(key: string): Promise<LineAudio | undefined> {
   return (await db()).get('lineAudio', key)
 }
@@ -454,6 +476,7 @@ export async function readLocalData(): Promise<LocalData> {
     lines: await database.getAll('lines'),
     notes: await database.getAll('notes'),
     characters: await database.getAll('characters'),
+    showNumbers: await database.getAll('showNumbers'),
     dances: await database.getAll('dances'),
     danceBookmarks: await database.getAll('danceBookmarks'),
     danceNotes: await database.getAll('danceNotes'),
@@ -475,6 +498,7 @@ const MERGED_STORES = [
   'scenes',
   'lines',
   'characters',
+  'showNumbers',
   'bookmarks',
   'notes',
   'danceBookmarks',
@@ -542,6 +566,8 @@ export async function undoLastImport(): Promise<void> {
     ['scenes', data.scenes],
     ['lines', data.lines],
     ['characters', data.characters],
+    // Snapshots from before the running order existed have none to restore.
+    ['showNumbers', data.showNumbers ?? []],
     ['bookmarks', data.bookmarks.filter((b) => trackIds.has(b.trackId))],
     ['notes', data.notes.filter((n) => trackIds.has(n.trackId))],
     ['danceBookmarks', data.danceBookmarks.filter((b) => danceIds.has(b.trackId))],

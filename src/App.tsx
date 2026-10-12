@@ -26,11 +26,12 @@ import {
   savePlaybackSettings,
   type PlaybackSettings,
 } from './scenes/playbackSettings'
+import { RunningOrderPage } from './runningorder/RunningOrderPage'
 import { ScenesPage } from './scenes/ScenesPage'
 import { TracksPage } from './tracks/TracksPage'
 import { VoiceLabPage } from './voices/VoiceLabPage'
 
-type Tab = 'tracks' | 'dance' | 'scenes' | 'mylines' | 'characters'
+type Tab = 'tracks' | 'dance' | 'scenes' | 'order' | 'mylines' | 'characters'
 
 /** A backup that has been read and merged on paper, waiting to be confirmed. */
 interface PendingImport {
@@ -211,6 +212,12 @@ export function App() {
             Scenes
           </button>
           <button
+            className={tab === 'order' ? 'is-active' : ''}
+            onClick={() => openTab('order')}
+          >
+            Running Order
+          </button>
+          <button
             className={tab === 'mylines' ? 'is-active' : ''}
             onClick={() => openTab('mylines')}
           >
@@ -281,6 +288,8 @@ export function App() {
           <DancePage />
         ) : tab === 'scenes' ? (
           <ScenesPage settings={settings} onSettingsChange={updateSettings} />
+        ) : tab === 'order' ? (
+          <RunningOrderPage />
         ) : tab === 'mylines' ? (
           <MyLinesPage settings={settings} onSettingsChange={updateSettings} />
         ) : (

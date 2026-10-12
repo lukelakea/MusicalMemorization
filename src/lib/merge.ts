@@ -8,6 +8,7 @@ import type {
   Line,
   Note,
   Scene,
+  ShowNumber,
   TrackMeta,
 } from './types'
 import { isNaturalVoice } from './naturalVoices'
@@ -16,7 +17,7 @@ import { isNaturalVoice } from './naturalVoices'
 export type LocalData = Required<Omit<BackupFile, 'format' | 'version' | 'exportedAt' | 'lineAudio'>>
 
 /** The newest backup format this code understands. */
-export const BACKUP_VERSION = 7
+export const BACKUP_VERSION = 8
 
 export function deletionKey(store: DeletableStore, id: string): string {
   return `${store}:${id}`
@@ -54,6 +55,7 @@ export interface MergePlan {
     scenes: Scene[]
     lines: Line[]
     characters: Character[]
+    showNumbers: ShowNumber[]
     bookmarks: Bookmark[]
     notes: Note[]
     danceBookmarks: Bookmark[]
@@ -86,6 +88,7 @@ export function lastLocalEdit(local: LocalData): number {
     local.lines,
     local.notes,
     local.characters,
+    local.showNumbers,
     local.dances,
     local.danceBookmarks,
     local.danceNotes,
@@ -452,6 +455,20 @@ export function planMerge(
     linePuts = upsert(linePuts, normalizeOrder(sceneLines))
   }
 
+  const showNumbers = mergeCollection(
+    {
+      store: 'showNumbers',
+      local: local.showNumbers,
+      incoming: backup.showNumbers ?? [],
+      keyOf: (number) => number.id,
+      label: (number) => `Running order ${number.label} ${number.title}`,
+    },
+    deletedLocally,
+    deletedIncoming,
+    summary,
+  )
+  const showNumberPuts = upsert(showNumbers.puts, normalizeOrder([...showNumbers.result.values()]))
+
   // Deletion records travel on, so a third import (or the trip back) still
   // knows these were deleted. Notes' records are stored under this device's
   // track ids.
@@ -470,6 +487,7 @@ export function planMerge(
       scenes: scenePuts,
       lines: linePuts,
       characters: characters.puts,
+      showNumbers: showNumberPuts,
       bookmarks: tracks.bookmarks.puts,
       notes: tracks.notes.puts,
       danceBookmarks: dances.bookmarks.puts,
@@ -481,6 +499,7 @@ export function planMerge(
       scenes: scenes.deletes,
       lines: lineDeletes,
       characters: characters.deletes,
+      showNumbers: showNumbers.deletes,
       bookmarks: tracks.bookmarks.deletes,
       notes: tracks.notes.deletes,
       danceBookmarks: dances.bookmarks.deletes,
