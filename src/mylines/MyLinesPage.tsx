@@ -23,7 +23,7 @@ interface Props {
 }
 
 export function MyLinesPage({ settings, onSettingsChange }: Props) {
-  const { speed, delaySec, repeat, speakContext, showContext: showAllContext } = settings
+  const { speed, delaySec, repeat, speakContext, readMyLines, showContext: showAllContext } = settings
   const [entries, setEntries] = useState<Entry[]>([])
   const [characters, setCharacters] = useState<Character[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -86,7 +86,7 @@ export function MyLinesPage({ settings, onSettingsChange }: Props) {
     characters,
     speed,
     delaySec,
-    speakMyLines: true,
+    speakMyLines: readMyLines,
     title: 'My Lines',
     cueFor: speakContext ? (line) => cueById.get(line.id) ?? null : undefined,
     onFinished: () => {
@@ -201,6 +201,17 @@ export function MyLinesPage({ settings, onSettingsChange }: Props) {
               </option>
             ))}
           </select>
+        </label>
+        <label
+          className="inline-check"
+          title="Off: wait in silence, as long as the line takes to say, so you can recite it yourself"
+        >
+          <input
+            type="checkbox"
+            checked={readMyLines}
+            onChange={(e) => onSettingsChange({ readMyLines: e.target.checked })}
+          />
+          Read my lines aloud
         </label>
         <label
           className="inline-check"

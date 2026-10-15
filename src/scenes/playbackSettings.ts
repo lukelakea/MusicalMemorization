@@ -6,6 +6,8 @@ export interface PlaybackSettings {
   speakMyLines: boolean
   cueMode: boolean
   autoAdvance: boolean
+  /** My Lines tab: read your own lines aloud; off waits in silence for you to recite them. */
+  readMyLines: boolean
   /** My Lines tab: show the cue line above every one of yours. */
   showContext: boolean
   /** My Lines tab: speak the cue line, in its own voice, before each of yours. */
@@ -20,6 +22,7 @@ export const DEFAULT_PLAYBACK_SETTINGS: PlaybackSettings = {
   speakMyLines: false,
   cueMode: false,
   autoAdvance: false,
+  readMyLines: true,
   showContext: false,
   speakContext: false,
   repeat: 1,
@@ -45,6 +48,7 @@ export function loadPlaybackSettings(): PlaybackSettings {
       speakMyLines: pick('speakMyLines', (v) => typeof v === 'boolean'),
       cueMode: pick('cueMode', (v) => typeof v === 'boolean'),
       autoAdvance: pick('autoAdvance', (v) => typeof v === 'boolean'),
+      readMyLines: pick('readMyLines', (v) => typeof v === 'boolean'),
       showContext: pick('showContext', (v) => typeof v === 'boolean'),
       speakContext: pick('speakContext', (v) => typeof v === 'boolean'),
       repeat: pick('repeat', (v) => REPEAT_OPTIONS.includes(v as number)),
