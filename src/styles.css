@@ -531,13 +531,13 @@ button.tiny { padding: 1px 6px; font-size: 11px; line-height: 1.3; }
 .run-act { font-size: 13px; text-transform: uppercase; color: var(--muted); margin: 18px 0 6px; }
 .run-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .run-row { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 6px; }
-.run-row.is-mine { background: var(--mine-soft); border-color: var(--mine); }
+.run-row.is-mine { background: hsl(var(--hue) 35% 17%); border-color: hsl(var(--hue) 60% 62%); }
 .run-main { display: flex; align-items: baseline; gap: 10px; width: 100%; background: none; border: 0; color: inherit; text-align: left; padding: 10px 12px; cursor: pointer; flex-wrap: wrap; }
 .run-label { min-width: 2.2em; color: var(--muted); font-variant-numeric: tabular-nums; }
-.is-mine .run-label { color: var(--mine); }
+.is-mine .run-label { color: hsl(var(--hue) 70% 72%); }
 .run-title { flex: 1; min-width: 8em; }
 .is-mine .run-title { font-weight: 600; }
-.run-role { background: var(--mine); color: #1a1030; border-radius: 10px; padding: 1px 9px; font-size: 12px; font-weight: 600; }
+.run-role { background: hsl(var(--hue, 275) 70% 72%); color: #14111c; border-radius: 10px; padding: 1px 9px; font-size: 12px; font-weight: 600; }
 .run-page { color: var(--muted); font-size: 12px; }
 .run-change { margin: 3px 0 3px 18px; padding: 5px 10px; border-left: 3px dashed var(--muted); color: var(--muted); font-size: 13px; }
 .run-change.is-set { border-left-color: var(--accent); color: var(--text); background: var(--accent-soft); border-radius: 0 6px 6px 0; }

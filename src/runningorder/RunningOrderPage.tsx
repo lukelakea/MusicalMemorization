@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import type { Character, ShowNumber } from '../lib/types'
 import {
   deleteShowNumber,
@@ -36,6 +36,9 @@ function roleChanges(numbers: ShowNumber[]): Map<string, RoleChange> {
   return changes
 }
 
+/** Hues spread around the colour wheel, so characters side by side look different. */
+const ROLE_HUES = [275, 195, 140, 35, 340, 60, 10, 235]
+
 export function RunningOrderPage() {
   const [numbers, setNumbers] = useState<ShowNumber[] | null>(null)
   const [characters, setCharacters] = useState<Character[]>([])
@@ -50,6 +53,15 @@ export function RunningOrderPage() {
 
   const list = useMemo(() => numbers ?? [], [numbers])
   const changes = useMemo(() => roleChanges(list), [list])
+  // Each character gets the next hue in the order they first appear in the show.
+  const roleHues = useMemo(() => {
+    const hues = new Map<string, number>()
+    for (const number of list) {
+      const role = number.role.trim().toLowerCase()
+      if (role && !hues.has(role)) hues.set(role, ROLE_HUES[hues.size % ROLE_HUES.length])
+    }
+    return hues
+  }, [list])
   const mineCount = list.filter((number) => number.role.trim()).length
   const roleNames = useMemo(() => {
     const names = new Set(characters.map((character) => character.name))
@@ -128,7 +140,14 @@ export function RunningOrderPage() {
     const open = openId === number.id
     return (
       <li key={number.id} className="run-item">
-        <div className={`run-row${isMine ? ' is-mine' : ''}`}>
+        <div
+          className={`run-row${isMine ? ' is-mine' : ''}`}
+          style={
+            isMine
+              ? ({ '--hue': roleHues.get(number.role.trim().toLowerCase()) } as CSSProperties)
+              : undefined
+          }
+        >
           <button
             className="run-main"
             aria-expanded={open}
